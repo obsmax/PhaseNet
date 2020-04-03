@@ -331,32 +331,21 @@ class DataReader_pred(DataReader):
 
 class DataReader_mseed(DataReader):
 
-    def __init__(self,
-                 data_dir,
-                 data_list,
-                 queue_size,
-                 coord,
-                 input_length=3000,
-                 config=Config()):
+    def __init__(self, data_dir, data_list, queue_size, coord, input_length=3000, config=Config()):
 
-        self.config = config
-        tmp_list = pd.read_csv(data_list, header=0)
-        self.data_list = tmp_list
-        self.num_data = len(self.data_list)
-        self.data_dir = data_dir
-        self.queue_size = queue_size
-        self.X_shape = config.X_shape
-        self.Y_shape = config.Y_shape
+        DataReader.__init__(
+            self,
+            data_dir=data_dir, data_list=data_list, mask_window=0,
+            queue_size=queue_size, coord=coord, config=config)
+        self.mask_window = None
+
         self.input_length = config.X_shape[0]
+
         if input_length is not None:
             logging.warning("Using input length: {}".format(input_length))
             self.X_shape[0] = input_length
             self.Y_shape[0] = input_length
             self.input_length = input_length
-
-        self.coord = coord
-        self.threads = []
-        self.add_placeholder()
 
     def add_placeholder(self):
         self.sample_placeholder = tf.placeholder(dtype=tf.float32, shape=None)
