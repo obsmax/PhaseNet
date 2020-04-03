@@ -9,10 +9,18 @@ import scipy.interpolate
 
 pd.options.mode.chained_assignment = None
 import obspy
+from obspy.core import UTCDateTime
 from tqdm import tqdm
 
 
-class Config():
+SDSPATH = os.path.join(
+    "{data_dir}", "{year}",
+    "{network}", "{station}",
+    "{channel}.{dataquality}",
+    "{network}.{station}.{location}.{channel}.{year:.04f}.{julday:.03f}")
+
+
+class Config(object):
     seed = 100
     use_seed = False
     n_channel = 3
@@ -270,6 +278,7 @@ class DataReader_pred(DataReader):
                  coord,
                  input_length=None,
                  config=Config()):
+        # TODO : use inheritence correctly
         self.config = config
         tmp_list = pd.read_csv(data_list, header=0)
         self.data_list = tmp_list
@@ -337,8 +346,8 @@ class DataReader_mseed(DataReader):
             self,
             data_dir=data_dir, data_list=data_list, mask_window=0,
             queue_size=queue_size, coord=coord, config=config)
-        self.mask_window = None
 
+        self.mask_window = None  # not used by this class
         self.input_length = config.X_shape[0]
 
         if input_length is not None:
@@ -361,70 +370,152 @@ class DataReader_mseed(DataReader):
         output = self.queue.dequeue_up_to(num_elements)
         return output
 
-    def read_mseed(self, fp, channels):
+    def read_mseed(self, efile, nfile, zfile):
         """
         default mseed preprocessing here
         """
+        estream = obspy.read(efile, format="MSEED")
+        nstream = obspy.read(nfile, format="MSEED")
+        zstream = obspy.read(zfile, format="MSEED")
 
-        meta = obspy.read(fp, format="MSEED")
-        meta = meta.detrend('constant')
-        meta = meta.merge(fill_value=0)
-        meta = meta.trim(min([st.stats.starttime for st in meta]),
-                         max([st.stats.endtime for st in meta]),
-                         pad=True, fill_value=0)
-        nt = len(meta[0].data)
+        starttime, endtime = np.inf, -np.inf
+        for st, expected_comp in zip([estream, nstream, zstream], 'ENZ'):
+            for tr in st:
+                if tr.stats.sampling_rate != 100.:
+                    raise ValueError(
+                        'Sampling rate was {}Hz'.format(tr.stats.samping_rate))
+                if tr.stats.channel[2] != expected_comp:
+                    raise ValueError(
+                        'Channel was {} and I was expecting ??{}'.format(tr.stats.channel, expected_comp))
+
+                starttime = np.min([starttime, tr.stats.starttime.timestamp])
+                endtime = np.max([endtime, tr.stats.endtime.timestamp])
+
+        for st in estream, nstream, zstream:
+            st.detrend('constant')
+            st.merge(fill_value=0)
+            st.trim(UTCDateTime(starttime),
+                    UTCDateTime(endtime), pad=True, fill_value=0.)
+            assert len(st) == 1  # QC
+            assert st[0].stats.samping_rate == estream[0].stats.samping_rate  # QC
+
+        data = np.vstack([st[0].data for st in [estream, nstream, zstream]])
+
+        start = zstream[0].stats.starttime
+        nt = data.shape[1]
+        dt = zstream[0].stats.delta
+        timearray = start.timestamp + np.arange(nt) * dt
 
         ## can test small sampling rate for longer distance
         # meta = meta.interpolate(sampling_rate=100)
 
-        data = [[] for _ in channels]
-        for i, ch in enumerate(channels):
-            tmp = meta.select(channel=ch)
-            if len(tmp) == 1:
-                data[i] = tmp[0].data
-            elif len(tmp) == 0:
-                print(f"Warning: Missing channel \"{ch}\" in {meta}")
-                data[i] = np.zeros(nt)
-            else:
-                print(f"Error in {tmp}")
-        data = np.vstack(data)
-
-        pad_width = int((np.ceil((data.shape[1] - 1) / self.input_length)) * self.input_length - data.shape[1])
+        pad_width = int((np.ceil((nt - 1) / self.input_length)) * self.input_length - nt)
         if pad_width == -1:
             data = data[:, :-1]
+            nt -= 1
+            timearray = timearray[:-1]
         else:
+            # pad the data
             data = np.pad(data, ((0, 0), (0, pad_width)), 'constant', constant_values=(0, 0))
+            # recompute the time array
+            nt = data.shape[1]
+            timearray = start.timestamp + np.arange(nt) * dt
 
-        data = np.hstack([data, np.zeros_like(data[:, :self.input_length // 2]), data[:, :-self.input_length // 2]])
-        data = np.reshape(data, (3, -1, self.input_length))
+        # repeat the data twice for 50% overlapping
+        data = np.hstack([
+            data,
+            np.zeros_like(data[:, :self.input_length // 2]),
+            data[:, :-self.input_length // 2]])
+
+        # naive version, do exactly the same with time array as with the data
+        # to ensure synchronization is preserved
+        timearray = np.hstack([
+            timearray,
+            np.nan * np.zeros_like(data[:, :self.input_length // 2]),
+            timearray[:-self.input_length // 2]])
+
+        # one depth (axis 0) per component E, N, Z
+        # then one raw per window
+        # one column per sample in the window
+        data = data.reshape((3, -1, self.input_length))
+        timearray = timearray.reshape((3, -1, self.input_length))  # naive
+        timearray = timearray[0, :, 0]  # keep only the starttime of each window in s since epoch
+
+        # depths become the window numbers
+        # lines become the samples inside the windows
+        # columns become the component number
+        # then a 1d axis is added in 2nd dimension
         data = data.transpose(1, 2, 0)[:, :, np.newaxis, :]
 
-        return data
+        return data, timearray
 
     def thread_main(self, sess, n_threads=1, start=0):
-        index = list(range(start, self.num_data, n_threads))
-        for i in index:
-            fname = self.data_list.iloc[i]['fname']
-            fp = os.path.join(self.data_dir, fname)
-            E = self.data_list.iloc[i]['E']
-            N = self.data_list.iloc[i]['N']
-            Z = self.data_list.iloc[i]['Z']
+        # raise NotImplementedError('update this method so it can receive 3 indep mseed files for channels E, N, Z')
+        for i in range(start, self.num_data, n_threads):
+            #fname = self.data_list.iloc[i]['fname']
+            #fp = os.path.join(self.data_dir, fname)
+
+            network = self.data_list.iloc[i]['network']           # expects FR
+            station = self.data_list.iloc[i]['station']           # expects ABCD
+            location = self.data_list.iloc[i]['location']         # expects 00 or * or none
+            dataquality = self.data_list.iloc[i]['dataquality']   # expects D or ?
+            channel = self.data_list.iloc[i]['channel']           # expects EH* or EH? or HH? ...
+            year = self.data_list.iloc[i]['year']                 # expects 2014
+            julday = self.data_list.iloc[i]['julday']             # expects 014
+
+            location = location.replace('none', '')
+            assert len(location) == 2 or location == "*" or location == ""
+            assert len(channel) == 3 and channel.endswith('?') or channel.endswith('*')
+
+            filenames = []
+            for comp in "ENZ":
+                filepath = SDSPATH.format(
+                    data_dir=self.data_dir, year=year, julday=julday,
+                    dataquality=dataquality,
+                    network=network, station=station,
+                    location=location, channel=channel[:2] + comp)
+
+                if os.path.isfile(filepath):
+                    filenames.append(filepath)
+
+                else:
+                    import glob
+                    ls = glob.iglob(filepath)
+                    try:
+                        filename = next(ls)
+                    except StopIteration:
+                        raise ValueError('no file responding to {}'.format(filepath))
+                    finally:
+                        ls.close()
+                    filenames.append(filename)
 
             try:
-                meta = self.read_mseed(fp, [E, N, Z])
+                # meta = self.read_mseed(fp, [E, N, Z])
+                data, timearray = self.read_mseed(
+                    efile=filenames[0],
+                    nfile=filenames[1],
+                    zfile=filenames[2])
+
             except (IOError, ValueError, TypeError) as e:
                 # you should never skip Exception, just notice the error type when it occurs and add it to the
                 # list of ignored errors above
-                logging.error("Failed reading {}".format(fname))
+                logging.error("Failed reading mseed files {}".format(filenames))
                 print(e)
                 continue
+            except BaseException as e:
+                print('please never skip Exception or BaseException, '
+                      'add the following type to the except close above : '
+                      '{}'.format(e.__class__.__name__))
+                raise e
 
-            for i in tqdm(range(meta.shape[0]), desc=f"{fp}"):
-                sample = meta[i]
+            for i in tqdm(range(data.shape[0]), desc=r"{fp}"):
+                # loop over windows
+                sample = data[i]
                 sample = self.normalize(sample)
                 sample = self.adjust_missingchannels(sample)
-                sess.run(self.enqueue, feed_dict={self.sample_placeholder: sample,
-                                                  self.fname_placeholder: f"{fname}_{i * self.input_length}"})
+                sess.run(self.enqueue,
+                         feed_dict={self.sample_placeholder: sample,
+                                    self.fname_placeholder: r"{fname}_{i * self.input_length}"})
 
 
 if __name__ == "__main__":
