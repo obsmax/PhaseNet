@@ -1,24 +1,14 @@
-
-
 ## 1. Install
 
-### Using Anaconda (recommend)
-```bash
+### Using Anaconda (recommended)
+```
+# move to the PhaseNet repo
 conda create --name venv python=3.6
 conda activate venv
-conda install tensorflow=1.10 matplotlib scipy pandas tqdm
-conda install libiconv
-conda install obspy -c conda-forge
+conda install --file requirements.txt --yes
+pip install -e .
 ```
 
-### Using virtualenv
-```bash
-pip install virtualenv
-virtualenv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-pip install obspy libiconv
-```
 
 ### 2.Demo Data
 

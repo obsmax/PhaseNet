@@ -4,8 +4,8 @@ matplotlib.use('agg')
 import matplotlib.pyplot as plt
 import numpy as np
 import os
-from data_reader import Config
-from detect_peaks import detect_peaks
+from PhaseNet.data_reader import Config
+from PhaseNet.detect_peaks import detect_peaks
 import logging
 
 def detect_peaks_thread(i, pred, fname=None, result_dir=None, args=None):

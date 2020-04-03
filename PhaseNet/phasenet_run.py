@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 from __future__ import division
 import numpy as np
 import tensorflow as tf
@@ -5,21 +6,24 @@ import argparse
 import os
 import time
 import logging
-from model import Model
-from data_reader import Config, DataReader, DataReader_test, DataReader_pred, DataReader_mseed
-from util import *
+from PhaseNet.model import Model
+from PhaseNet.data_reader import Config, DataReader, DataReader_test, DataReader_pred, DataReader_mseed
+from PhaseNet.util import *
 from tqdm import tqdm
 import pandas as pd
 import threading
 import multiprocessing
 from functools import partial
+import sys
+
+
 
 def read_args():
 
   parser = argparse.ArgumentParser()
 
+
   parser.add_argument("--mode",
-                      default="train",
                       help="train/valid/test/debug")
 
   parser.add_argument("--epochs",
@@ -180,6 +184,11 @@ def read_args():
   parser.add_argument("--fpred",
                       default="picks",
                       help="Ouput filename fo test")
+
+  if len(sys.argv) == 1:
+      # print help if no arguments passed
+      parser.print_help()
+      sys.exit(1)
 
   args = parser.parse_args()
   return args
@@ -587,7 +596,7 @@ def main(args):
     pred_fn(args, data_reader, log_dir=args.output_dir)
 
   else:
-    print("mode should be: train, valid, test, pred or debug")
+    raise ValueError("mode should be: train, valid, test, pred or debug")
 
   return
 
