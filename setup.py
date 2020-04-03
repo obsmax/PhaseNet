@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
-    name="PhaseNet", # Replace with your own username
+    name="PhaseNet",
     version=__version__,
     author="",
     author_email="",

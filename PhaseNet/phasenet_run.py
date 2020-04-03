@@ -17,7 +17,6 @@ from functools import partial
 import sys
 
 
-
 def read_args():
 
   parser = argparse.ArgumentParser()
