@@ -17,7 +17,8 @@ SDSPATH = os.path.join(
     "{data_dir}", "{year}",
     "{network}", "{station}",
     "{channel}.{dataquality}",
-    "{network}.{station}.{location}.{channel}.{year:.04f}.{julday:.03f}")
+    "{network}.{station}.{location}.{channel}.{dataquality}"
+    ".{year:04.0f}.{julday:03.0f}")
 
 
 class Config(object):
@@ -346,7 +347,6 @@ class DataReader_mseed(DataReader):
             self,
             data_dir=data_dir, data_list=data_list, mask_window=0,
             queue_size=queue_size, coord=coord, config=config)
-
         self.mask_window = None  # not used by this class
         self.input_length = config.X_shape[0]
 
@@ -355,6 +355,29 @@ class DataReader_mseed(DataReader):
             self.X_shape[0] = input_length
             self.Y_shape[0] = input_length
             self.input_length = input_length
+
+        # check the input directory
+        assert os.path.isdir(self.data_dir)
+
+        # check the input file
+        try:
+            self.data_list.iloc[0]['network']
+            self.data_list.iloc[0]['station']
+            self.data_list.iloc[0]['location']
+            self.data_list.iloc[0]['dataquality']
+            self.data_list.iloc[0]['channel']
+            self.data_list.iloc[0]['year']
+            self.data_list.iloc[0]['julday']
+        except KeyError as e:
+            e.args = ('unexpected csv header : I need the following keys on first line (no space)'
+                      'network,station,location,dataquality,channel,year,julday', )
+            raise e
+        if False:
+            # test reader outside the parallel app
+            self.read_mseed(
+                efile="./sds/2017/XD/S0316/EHE.D/XD.S0316.00.EHE.D.2017.222",
+                nfile="./sds/2017/XD/S0316/EHN.D/XD.S0316.00.EHN.D.2017.222",
+                zfile="./sds/2017/XD/S0316/EHZ.D/XD.S0316.00.EHZ.D.2017.222")
 
     def add_placeholder(self):
         self.sample_placeholder = tf.placeholder(dtype=tf.float32, shape=None)
@@ -381,9 +404,9 @@ class DataReader_mseed(DataReader):
         starttime, endtime = np.inf, -np.inf
         for st, expected_comp in zip([estream, nstream, zstream], 'ENZ'):
             for tr in st:
-                if tr.stats.sampling_rate != 100.:
+                if tr.stats.sampling_rate != self.config.sampling_rate:
                     raise ValueError(
-                        'Sampling rate was {}Hz'.format(tr.stats.samping_rate))
+                        'Sampling rate was {}Hz'.format(tr.stats.sampling_rate))
                 if tr.stats.channel[2] != expected_comp:
                     raise ValueError(
                         'Channel was {} and I was expecting ??{}'.format(tr.stats.channel, expected_comp))
@@ -397,7 +420,7 @@ class DataReader_mseed(DataReader):
             st.trim(UTCDateTime(starttime),
                     UTCDateTime(endtime), pad=True, fill_value=0.)
             assert len(st) == 1  # QC
-            assert st[0].stats.samping_rate == estream[0].stats.samping_rate  # QC
+            assert st[0].stats.sampling_rate == estream[0].stats.sampling_rate  # QC
 
         data = np.vstack([st[0].data for st in [estream, nstream, zstream]])
 
@@ -431,7 +454,7 @@ class DataReader_mseed(DataReader):
         # to ensure synchronization is preserved
         timearray = np.hstack([
             timearray,
-            np.nan * np.zeros_like(data[:, :self.input_length // 2]),
+            np.nan * np.zeros_like(timearray[:self.input_length // 2]),
             timearray[:-self.input_length // 2]])
 
         # one depth (axis 0) per component E, N, Z
@@ -499,7 +522,7 @@ class DataReader_mseed(DataReader):
             except (IOError, ValueError, TypeError) as e:
                 # you should never skip Exception, just notice the error type when it occurs and add it to the
                 # list of ignored errors above
-                logging.error("Failed reading mseed files {}".format(filenames))
+                logging.error("Failed reading mseed files {} (reason:{})".format(filenames, str(e)))
                 print(e)
                 continue
             except BaseException as e:
