@@ -7,4 +7,4 @@ phasenet_run.py \
     --output_dir=output \
     --batch_size=20 \
     --input_mseed \
-    --plot_figure \
+    --plot_figure
