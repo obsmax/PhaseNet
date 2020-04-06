@@ -15,6 +15,7 @@ import glob
 from obspy import UTCDateTime
 
 
+# conventional path name for SDS data archive
 SDSPATH = os.path.join(
     "{data_dir}", "{year}",
     "{network}", "{station}",
@@ -22,9 +23,13 @@ SDSPATH = os.path.join(
     "{network}.{station}.{location}.{channel}.{dataquality}"
     ".{year:04d}.{julday:03d}")
 
+# first part of the sample name
 SEEDID = "{network:s}.{station:s}.{location:s}.{channel2:2s}.{dataquality:1s}"
 
-SAMPLENAME = "{seedid:s}_Y{year:04d}J{julday:03d}H{hour:02d}M{minute:02d}S{second:09.6f}_{sampling_rate:f}Hz_NPTS{input_length}"
+# use a more detailed name for each sample to preserve the time information
+SAMPLENAME = \
+    "{seedid:s}_Y{year:04d}J{julday:03d}H{hour:02d}M{minute:02d}S{second:09.6f}_" \
+    "{sampling_rate:f}Hz_NPTS{input_length}"
 
 
 def decode_sample_name(sample_name: str):
@@ -404,18 +409,6 @@ class DataReader_mseed(DataReader):
             e.args = ('unexpected csv header : I need the following keys on first line (no space)'
                       'network,station,location,dataquality,channel,year,julday', )
             raise e
-        if False:
-            # test reader outside the parallel app
-            seedid, data, timearray = self.read_mseed(
-                efile="./sds/2017/XD/S0316/EHE.D/XD.S0316.00.EHE.D.2017.222",
-                nfile="./sds/2017/XD/S0316/EHN.D/XD.S0316.00.EHN.D.2017.222",
-                zfile="./sds/2017/XD/S0316/EHZ.D/XD.S0316.00.EHZ.D.2017.222")
-            assert not np.isnan(timearray).any()
-            for _ in timearray:
-                try:UTCDateTime(_)
-                except:
-                    raise ValueError(_)
-            raise ValueError(seedid, data.shape, timearray.shape)
 
     def add_placeholder(self):
         self.sample_placeholder = tf.placeholder(dtype=tf.float32, shape=None)
@@ -434,6 +427,11 @@ class DataReader_mseed(DataReader):
     def read_mseed(self, efile, nfile, zfile):
         """
         default mseed preprocessing here
+        modif 06 apr 2020, M.L.
+            The method now works with 3 indep files for components E, N, Z, as in real world
+            the time array is preserved so that accurate time picks are provided
+            (indexs (itp, its) were not accurate because the data is transformed by obspy.merge)
+
         """
         estream = obspy.read(efile, format="MSEED")
         nstream = obspy.read(nfile, format="MSEED")
@@ -497,13 +495,7 @@ class DataReader_mseed(DataReader):
 
         # naive version, do exactly the same with time array as with the data
         # to ensure synchronization is preserved
-        if False:
-            timearray = np.hstack([
-                timearray,
-                np.nan * np.zeros_like(timearray[:self.input_length // 2]),
-                timearray[:-self.input_length // 2]])
-        else:
-            timearray = np.hstack([timearray, timearray - self.input_length // 2 * dt])
+        timearray = np.hstack([timearray, timearray - self.input_length // 2 * dt])
 
         # one depth (axis 0) per component E, N, Z
         # then one raw per window
