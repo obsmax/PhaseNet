@@ -13,12 +13,19 @@
 #       - use wildcards only for unkown fields and for the component letter (see demo/fname.csv)
 # output picks in output_dir/picks.csv
 phasenet_run.py \
-    --mode=pred \
-    --model_dir=../model/190703-214543 \
-    --data_dir=sds \
-    --data_list=fname.csv \
-    --output_dir=output \
-    --batch_size=20 \
+    --mode pred \
+    --model_dir ../model/190703-214543 \
+    --data_dir sds \
+    --data_list fname.csv \
+    --output_dir output \
+    --batch_size 20 \
     --input_mseed \
     --save_result
 #    --plot_figure  # disabled in this version
+
+
+phasenet_disp.py \
+    --data_dir sds \
+    --output_dir output \
+    --seedid "*.AAAA.*.EH?.D" "*.BBBB.*.EH?.D" "*.CCCC.*.EH?.D" "*.DDDD.*.EH?.D" \
+    --day 2000.223

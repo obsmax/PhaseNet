@@ -4,6 +4,7 @@ PhaseNet/__init__.py
 PhaseNet/data_reader.py
 PhaseNet/detect_peaks.py
 PhaseNet/model.py
+PhaseNet/phasenet_disp.py
 PhaseNet/phasenet_run.py
 PhaseNet/util.py
 PhaseNet/version.py

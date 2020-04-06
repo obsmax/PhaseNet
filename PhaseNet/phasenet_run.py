@@ -1,22 +1,17 @@
 #!/usr/bin/env python
 from __future__ import division
-import numpy as np
+import os, sys, shutil, time
+import logging, argparse
 import tensorflow as tf
-import argparse
-import os
-import time
-import logging
-from PhaseNet.model import Model
-from PhaseNet.data_reader import Config, DataReader, DataReader_test, DataReader_pred, DataReader_mseed
-from PhaseNet.util import save_predictions_to_hdf5_archive, reform_mseed_files_from_predictions
-from PhaseNet.util import *
-from tqdm import tqdm
-import pandas as pd
-import threading
 import multiprocessing
+from tqdm import tqdm
 from functools import partial
-import sys
 import h5py
+from PhaseNet.model import Model
+from PhaseNet.data_reader import \
+    Config, DataReader, DataReader_test, DataReader_pred, DataReader_mseed, decode_sample_name
+from PhaseNet.util import save_predictions_to_hdf5_archive, reform_mseed_files_from_predictions
+from PhaseNet.util import plot_result_thread, clean_queue, postprocessing_thread, calculate_metrics
 
 
 def read_args():
@@ -190,6 +185,14 @@ def read_args():
         sys.exit(1)
 
     args = parser.parse_args()
+
+    if args.output_dir is not None and os.path.isdir(args.output_dir):
+        if input('output_dir "{}" exists already, overwrite? y/[n]'.format(args.output_dir)) != "y":
+            sys.exit(1)
+
+        #os.rmdir(args.output_dir)
+        shutil.rmtree(args.output_dir)
+
     return args
 
 
@@ -516,7 +519,7 @@ def pred_fn(args, data_reader, figure_dir=None, result_dir=None, log_dir=None):
 
                 # place predictions results into a large hdf5 archive
                 if args.save_result:
-                    with h5py.File(hdf5_archive, 'w') as hdf5_pointer:
+                    with h5py.File(hdf5_archive, 'a') as hdf5_pointer:
                         save_predictions_to_hdf5_archive(
                             hdf5_pointer, fname_batch, pred_batch)
 
@@ -526,8 +529,8 @@ def pred_fn(args, data_reader, figure_dir=None, result_dir=None, log_dir=None):
                             pred=pred_batch,
                             X=X_batch,
                             fname=fname_batch,
-                            result_dir=result_dir,
-                            figure_dir=figure_dir,
+                            result_dir=None,  # force ignore this
+                            figure_dir=None,  # force ignore this
                             args=args),
                     range(len(pred_batch)))
 
@@ -554,6 +557,7 @@ def pred_fn(args, data_reader, figure_dir=None, result_dir=None, log_dir=None):
             if args.save_result:
                 # load sample prediction and concatenate them into
                 # mseed files with the same structure as the input sds tree
+                print('forming mseed files with the P and S prediction series...')
                 with h5py.File(hdf5_archive, 'r') as hdf5_pointer:
                     reform_mseed_files_from_predictions(
                         hdf5_pointer, result_dir)
@@ -584,7 +588,7 @@ def pred_fn(args, data_reader, figure_dir=None, result_dir=None, log_dir=None):
                                                   picks_batch[i][1][0], picks_batch[i][1][1]))
                 # fclog.flush()
 
-            fclog.close()
+        fclog.close()
         print("Done")
 
     return 0

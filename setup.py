@@ -18,6 +18,7 @@ setuptools.setup(
         "Programming Language :: Python :: 3",
         "Operating System :: Linux",
     ],
-    scripts=["PhaseNet/phasenet_run.py"],
+    scripts=["PhaseNet/phasenet_run.py",
+             "PhaseNet/phasenet_disp.py"],
     python_requires='>=3.6',
 )
