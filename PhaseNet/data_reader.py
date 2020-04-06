@@ -25,19 +25,23 @@ SDSPATH = os.path.join(
 BATCHNAME = "{seedid:s}_Y{year:04d}J{julday:03d}H{hour:02d}M{minute:02d}S{second:09.6f}_{sampling_rate:f}Hz"
 
 
-def decode_batch_name(batch_name):
+def decode_batch_name(batch_name: str):
     """get meta data from batch name formatted as above"""
-    seedid, batch_start, sampling_rate = batch_name.split("_")
+    seedid:str
+    batch_start: UTCDateTime
+    sampling_rate: float
+
+    seedid, batch_start_s, sampling_rate_s = batch_name.split("_")
 
     batch_start = UTCDateTime(
-               year=int(batch_start.split("Y")[-1].split('J')[0]),
-             julday=int(batch_start.split("J")[-1].split('H')[0]),
-               hour=int(batch_start.split("H")[-1].split('M')[0]),
-             minute=int(batch_start.split("M")[-1].split('S')[0]),
-             second=int(batch_start.split("S")[-1].split('.')[0]),
-        microsecond=int(batch_start.split("S")[-1].split('.')[1]) * 1000000)
+               year=int(batch_start_s.split("Y")[-1].split('J')[0]),
+             julday=int(batch_start_s.split("J")[-1].split('H')[0]),
+               hour=int(batch_start_s.split("H")[-1].split('M')[0]),
+             minute=int(batch_start_s.split("M")[-1].split('S')[0]),
+             second=int(batch_start_s.split("S")[-1].split('.')[0]),
+        microsecond=int(batch_start_s.split("S")[-1].split('.')[1]) * 1000000)
 
-    sampling_rate = float(sampling_rate.split('Hz')[0])
+    sampling_rate = float(sampling_rate_s.split('Hz')[0])
 
     return seedid, batch_start, sampling_rate
 
