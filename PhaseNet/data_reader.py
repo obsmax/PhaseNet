@@ -27,7 +27,7 @@ BATCHNAME = "{seedid:s}_Y{year:04d}J{julday:03d}H{hour:02d}M{minute:02d}S{second
 
 def decode_batch_name(batch_name: str):
     """get meta data from batch name formatted as above"""
-    seedid:str
+    seedid: str
     batch_start: UTCDateTime
     sampling_rate: float
 

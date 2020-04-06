@@ -432,11 +432,11 @@ def pred_fn(args, data_reader, figure_dir=None, result_dir=None, log_dir=None):
     logging.info("Dataset size: {}".format(data_reader.num_data))
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
-    if (args.plot_figure == True) and (figure_dir is None):
+    if args.plot_figure and (figure_dir is None):
         figure_dir = os.path.join(log_dir, 'figures')
         if not os.path.exists(figure_dir):
             os.makedirs(figure_dir)
-    if (args.save_result == True) and (result_dir is None):
+    if args.save_result and (result_dir is None):
         result_dir = os.path.join(log_dir, 'results')
         if not os.path.exists(result_dir):
             os.makedirs(result_dir)
