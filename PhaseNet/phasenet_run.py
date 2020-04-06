@@ -432,11 +432,15 @@ def pred_fn(args, data_reader, figure_dir=None, result_dir=None, log_dir=None):
     logging.info("Dataset size: {}".format(data_reader.num_data))
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
+
     if args.plot_figure and (figure_dir is None):
+        raise ValueError('too slow')
         figure_dir = os.path.join(log_dir, 'figures')
         if not os.path.exists(figure_dir):
             os.makedirs(figure_dir)
+
     if args.save_result and (result_dir is None):
+        raise ValueError('use hdf5 instead')
         result_dir = os.path.join(log_dir, 'results')
         if not os.path.exists(result_dir):
             os.makedirs(result_dir)
@@ -520,11 +524,11 @@ def pred_fn(args, data_reader, figure_dir=None, result_dir=None, log_dir=None):
 
                 # get the picks and write it to csv (picks.csv)
                 for i in range(len(fname_batch)):
+                    seedid, batch_start, sampling_rate, _ = \
+                        decode_batch_name(fname_batch[i].decode())
+
                     itp, tpprob = picks_batch[i][0]
                     its, tsprob = picks_batch[i][1]
-
-                    seedid, batch_start, sampling_rate = \
-                        decode_batch_name(fname_batch[i].decode())
 
                     for idx, pb in zip(itp, tpprob):
                         # find pick time from batchname metadata
@@ -622,7 +626,8 @@ def main(args):
                     queue_size=args.batch_size * 10,
                     coord=coord,
                     input_length=args.input_length)
-        pred_fn(args, data_reader, log_dir=args.output_dir)
+        pred_fn(args, data_reader,
+                log_dir=args.output_dir)
 
     else:
         raise ValueError("mode should be: train, valid, test, pred or debug")

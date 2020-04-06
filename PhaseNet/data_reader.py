@@ -15,12 +15,15 @@ import glob
 from obspy import UTCDateTime
 
 
+
 SDSPATH = os.path.join(
     "{data_dir}", "{year}",
     "{network}", "{station}",
     "{channel}.{dataquality}",
     "{network}.{station}.{location}.{channel}.{dataquality}"
     ".{year:04.0f}.{julday:03.0f}")
+
+SEEDID = "{network:s}.{station:s}.{location:s}.{channel2:2s}.{dataquality:1s}"
 
 BATCHNAME = "{seedid:s}_Y{year:04d}J{julday:03d}H{hour:02d}M{minute:02d}S{second:09.6f}_{sampling_rate:f}Hz"
 
@@ -30,6 +33,7 @@ def decode_batch_name(batch_name: str):
     seedid: str
     batch_start: UTCDateTime
     sampling_rate: float
+    seedid_details: tuple
 
     seedid, batch_start_s, sampling_rate_s = batch_name.split("_")
 
@@ -43,7 +47,9 @@ def decode_batch_name(batch_name: str):
 
     sampling_rate = float(sampling_rate_s.split('Hz')[0])
 
-    return seedid, batch_start, sampling_rate
+    network, station, location, channel2, dataquality = seedid.split('.')
+    seedid_details = (network, station, location, channel2, dataquality)
+    return seedid, batch_start, sampling_rate, seedid_details
 
 
 class Config(object):
@@ -453,9 +459,12 @@ class DataReader_mseed(DataReader):
             assert len(st) == 1  # QC
             assert st[0].stats.sampling_rate == estream[0].stats.sampling_rate  # QC
 
-        seedid = "{}.{}.{}.{}.{}".format(
-            st[0].stats.network, st[0].stats.station, st[0].stats.location,
-            st[0].stats.channel[:2], st[0].stats.mseed.dataquality)
+        seedid = SEEDID.format(
+            network=st[0].stats.network,
+            station=st[0].stats.station,
+            location=st[0].stats.location,
+            channel2=st[0].stats.channel[:2],
+            dataquality=st[0].stats.mseed.dataquality)
 
         data = np.vstack([st[0].data for st in [estream, nstream, zstream]])
 

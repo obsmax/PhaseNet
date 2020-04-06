@@ -5,9 +5,10 @@ matplotlib.use('agg')
 import matplotlib.pyplot as plt
 import numpy as np
 import os
-from PhaseNet.data_reader import Config
+from PhaseNet.data_reader import Config, decode_batch_name
 from PhaseNet.detect_peaks import detect_peaks
 import logging
+from obspy.core.trace import Trace
 
 
 def detect_peaks_thread(i, pred, fname=None, result_dir=None, args=None):
@@ -20,21 +21,26 @@ def detect_peaks_thread(i, pred, fname=None, result_dir=None, args=None):
     prob_p = pred[i, itp, 0, 1]
     prob_s = pred[i, its, 0, 2]
     if (fname is not None) and (result_dir is not None):
-        #    np.savez(os.path.join(result_dir, fname[i].decode().split('/')[-1]), pred=pred[i], itp=itp, its=its, prob_p=prob_p, prob_s=prob_s)
-        try:
-            np.savez(os.path.join(result_dir, fname[i].decode()), pred=pred[i], itp=itp, its=its, prob_p=prob_p,
-                     prob_s=prob_s)
-        except FileNotFoundError:
-            # if not os.path.exists(os.path.dirname(os.path.join(result_dir, fname[i].decode()))):
-            os.makedirs(os.path.dirname(os.path.join(result_dir, fname[i].decode())), exist_ok=True)
-            np.savez(os.path.join(result_dir, fname[i].decode()), pred=pred[i], itp=itp, its=its, prob_p=prob_p,
-                     prob_s=prob_s)
+        npzout = os.path.join(result_dir, fname[i].decode())
+        pathout = os.path.dirname(npzout)
+
+        os.makedirs(pathout, exist_ok=True)
+
+        np.savez(npzout,
+                 pred=pred[i],
+                 itp=itp,
+                 its=its,
+                 prob_p=prob_p,
+                 prob_s=prob_s)
+
     return [(itp, prob_p), (its, prob_s)]
 
 
-def plot_result_thread(i, pred, X, Y=None, itp=None, its=None,
-                       itp_pred=None, its_pred=None, fname=None, figure_dir=None):
-    dt = Config().dt
+def plot_result_thread(
+        i, pred, X, Y=None, itp=None, its=None,
+        itp_pred=None, its_pred=None, fname=None, figure_dir=None):
+
+    dt = Config.dt
     t = np.arange(0, pred.shape[1]) * dt
     box = dict(boxstyle='round', facecolor='white', alpha=1)
     text_loc = [0.05, 0.77]
@@ -42,6 +48,8 @@ def plot_result_thread(i, pred, X, Y=None, itp=None, its=None,
     plt.figure(i)
     # fig_size = plt.gcf().get_size_inches()
     # plt.gcf().set_size_inches(fig_size*[1, 1.2])
+
+    # ================================
     plt.subplot(411)
     plt.plot(t, X[i, :, 0, 0], 'k', label='E', linewidth=0.5)
     plt.autoscale(enable=True, axis='x', tight=True)
@@ -63,6 +71,8 @@ def plot_result_thread(i, pred, X, Y=None, itp=None, its=None,
     plt.gca().set_xticklabels([])
     plt.text(text_loc[0], text_loc[1], '(i)', horizontalalignment='center',
              transform=plt.gca().transAxes, fontsize="small", fontweight="normal", bbox=box)
+
+    # ================================
     plt.subplot(412)
     plt.plot(t, X[i, :, 0, 1], 'k', label='N', linewidth=0.5)
     plt.autoscale(enable=True, axis='x', tight=True)
@@ -78,6 +88,8 @@ def plot_result_thread(i, pred, X, Y=None, itp=None, its=None,
     plt.gca().set_xticklabels([])
     plt.text(text_loc[0], text_loc[1], '(ii)', horizontalalignment='center',
              transform=plt.gca().transAxes, fontsize="small", fontweight="normal", bbox=box)
+
+    # ================================
     plt.subplot(413)
     plt.plot(t, X[i, :, 0, 2], 'k', label='Z', linewidth=0.5)
     plt.autoscale(enable=True, axis='x', tight=True)
@@ -93,6 +105,8 @@ def plot_result_thread(i, pred, X, Y=None, itp=None, its=None,
     plt.gca().set_xticklabels([])
     plt.text(text_loc[0], text_loc[1], '(iii)', horizontalalignment='center',
              transform=plt.gca().transAxes, fontsize="small", fontweight="normal", bbox=box)
+
+    # ================================
     plt.subplot(414)
     if Y is not None:
         plt.plot(t, Y[i, :, 0, 1], 'b', label='P', linewidth=0.5)
@@ -117,13 +131,13 @@ def plot_result_thread(i, pred, X, Y=None, itp=None, its=None,
 
     try:
         plt.savefig(os.path.join(figure_dir,
-                                 fname[i].decode().rstrip('.npz') + '.png'),
+                                 fname[i].decode().replace('.npz', "") + '.png'),
                     bbox_inches='tight')
     except FileNotFoundError:
         # if not os.path.exists(os.path.dirname(os.path.join(figure_dir, fname[i].decode()))):
         os.makedirs(os.path.dirname(os.path.join(figure_dir, fname[i].decode())), exist_ok=True)
         plt.savefig(os.path.join(figure_dir,
-                                 fname[i].decode().rstrip('.npz') + '.png'),
+                                 fname[i].decode().replace('.npz', "") + '.png'),
                     bbox_inches='tight')
     # plt.savefig(os.path.join(figure_dir,
     #            fname[i].decode().split('/')[-1].rstrip('.npz')+'.png'),
@@ -135,9 +149,81 @@ def plot_result_thread(i, pred, X, Y=None, itp=None, its=None,
     return 0
 
 
+def extract_preds_sds_thread(
+        i, pred, fname=None, result_dir=None):
+
+    PREDPATH = os.path.join(
+        "{result_dir}",
+        "{year}", "{network}", "{station}", "{channel2}{phasename}.{dataquality}")
+
+    PREDFILE = "{network}.{station}.{location}.{channel2}{phasename}.{dataquality}." \
+               "{year:04d}.{julday:03d}.{hour:02d}.{minute:02d}.{second:09.6f}.mseed"
+
+    if (fname is not None) and (result_dir is not None):
+        seedid, batch_start, sampling_rate, \
+            (network, station, location, channel2, dataquality) = \
+            decode_batch_name(batch_name=fname[i].decode())
+
+        for nphase, phasename in enumerate("PS"):
+            pathout = PREDPATH.format(
+                result_dir=result_dir,
+                year=batch_start.year,
+                julday=batch_start.julday,
+                network=network,
+                station=station,
+                location=location,
+                channel2=channel2,
+                phasename=phasename,
+                dataquality=dataquality)
+
+            if not os.path.isdir(pathout):
+                print(f'creating : {pathout}')
+                os.makedirs(pathout, exist_ok=True)
+
+            fileout = PREDFILE.format(
+                year=batch_start.year,
+                julday=batch_start.julday,
+                hour=batch_start.hour,
+                minute=batch_start.minute,
+                second=batch_start.second + 1.e-6 * batch_start.microsecond,
+                network=network,
+                station=station,
+                location=location,
+                channel2=channel2,
+                phasename=phasename,
+                dataquality=dataquality,
+                i=i)
+
+            trace = Trace(
+                data=pred[i, :, 0, nphase+1],
+                header={
+                    "network": network,
+                    "station": station,
+                    "location": location,
+                    "channel": channel2 + phasename,
+                    "starttime": batch_start,
+                    "sampling_rate": sampling_rate})
+
+            trace.write(
+                os.path.join(pathout, fileout), format="MSEED")
+
+
 def postprocessing_thread(i, pred, X, Y=None, itp=None, its=None, fname=None, result_dir=None, figure_dir=None,
                           args=None):
-    (itp_pred, prob_p), (its_pred, prob_s) = detect_peaks_thread(i, pred, fname, result_dir, args)
+    """
+    :param i: batch number
+    :param pred: probability functions for P and S phases and?
+    :param X: seismic data
+    :param Y:
+    :param itp: indexs of picked P phases
+    :param its: indexs of picked S phases
+    :param fname:
+    :param result_dir:
+    :param figure_dir:
+    """
+    (itp_pred, prob_p), (its_pred, prob_s) = \
+        detect_peaks_thread(i, pred, fname, result_dir, args)
+
     if (fname is not None) and (figure_dir is not None):
         plot_result_thread(i, pred, X, Y, itp, its, itp_pred, its_pred, fname, figure_dir)
     return [(itp_pred, prob_p), (its_pred, prob_s)]
