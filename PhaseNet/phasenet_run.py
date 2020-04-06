@@ -8,6 +8,7 @@ import time
 import logging
 from PhaseNet.model import Model
 from PhaseNet.data_reader import Config, DataReader, DataReader_test, DataReader_pred, DataReader_mseed
+from PhaseNet.data_reader import decode_batch_name
 from PhaseNet.util import *
 from tqdm import tqdm
 import pandas as pd
@@ -472,15 +473,18 @@ def pred_fn(args, data_reader, figure_dir=None, result_dir=None, log_dir=None):
             num_pool = 2
         pool = multiprocessing.Pool(num_pool)
         fclog = open(os.path.join(log_dir, args.fpred + '.csv'), 'w')
-        fclog.write("fname,itp,tp_prob,its,ts_prob\n")
 
         if args.input_mseed:
+
+            # write pick file header
+            # fclog.write("batchname,itp,tp_prob,its,ts_prob\n")
+            fclog.write("seedid,phasename,time,probability\n")
 
             while True:
                 if sess.run(data_reader.queue.size()) >= args.batch_size:
                     break
                 time.sleep(2)
-                print("waiting data_reader...")
+                # print("waiting data_reader...")
 
             while True:
                 last_batch = True
@@ -498,26 +502,46 @@ def pred_fn(args, data_reader, figure_dir=None, result_dir=None, log_dir=None):
                     if last_size == 0:
                         break
 
-                pred_batch, X_batch, fname_batch = sess.run([model.preds, batch[0], batch[1]],
-                                                            feed_dict={model.drop_rate: 0,
-                                                                       model.is_training: False})
-                picks_batch = pool.map(partial(postprocessing_thread,
-                                               pred=pred_batch,
-                                               X=X_batch,
-                                               fname=fname_batch,
-                                               result_dir=result_dir,
-                                               figure_dir=figure_dir,
-                                               args=args),
-                                       range(len(pred_batch)))
+                pred_batch, X_batch, fname_batch = \
+                    sess.run([model.preds, batch[0], batch[1]],
+                             feed_dict={model.drop_rate: 0,
+                                        model.is_training: False})
+
+                # picks
+                picks_batch = pool.map(
+                    partial(postprocessing_thread,
+                            pred=pred_batch,
+                            X=X_batch,
+                            fname=fname_batch,
+                            result_dir=result_dir,
+                            figure_dir=figure_dir,
+                            args=args),
+                    range(len(pred_batch)))
+
+                # get the picks and write it to csv (picks.csv)
                 for i in range(len(fname_batch)):
-                    fclog.write(
-                        "{},{},{},{},{}\n".format(fname_batch[i].decode(), picks_batch[i][0][0], picks_batch[i][0][1],
-                                                  picks_batch[i][1][0], picks_batch[i][1][1]))
+                    itp, tpprob = picks_batch[i][0]
+                    its, tsprob = picks_batch[i][1]
+
+                    seedid, batch_start, sampling_rate = \
+                        decode_batch_name(fname_batch[i].decode())
+
+                    for idx, pb in zip(itp, tpprob):
+                        # find pick time from batchname metadata
+                        tpick = batch_start + idx / sampling_rate
+                        fclog.write(f"{seedid},P,{tpick},{pb}\n")
+
+                    for idx, pb in zip(its, tsprob):
+                        tpick = batch_start + idx / sampling_rate
+                        fclog.write(f"{seedid},S,{tpick},{pb}\n")
 
                 if last_batch:
                     break
 
         else:
+            # write pick file header
+            fclog.write("batchname,itp,tp_prob,its,ts_prob\n")
+
             for step in tqdm(range(0, data_reader.num_data, args.batch_size), desc="Pred"):
                 if step + args.batch_size >= data_reader.num_data:
                     for t in threads:

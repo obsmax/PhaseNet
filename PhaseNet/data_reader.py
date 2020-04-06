@@ -11,6 +11,8 @@ pd.options.mode.chained_assignment = None
 import obspy
 from obspy.core import UTCDateTime
 from tqdm import tqdm
+import glob
+from obspy import UTCDateTime
 
 
 SDSPATH = os.path.join(
@@ -19,6 +21,25 @@ SDSPATH = os.path.join(
     "{channel}.{dataquality}",
     "{network}.{station}.{location}.{channel}.{dataquality}"
     ".{year:04.0f}.{julday:03.0f}")
+
+BATCHNAME = "{seedid:s}_Y{year:04d}J{julday:03d}H{hour:02d}M{minute:02d}S{second:09.6f}_{sampling_rate:f}Hz"
+
+
+def decode_batch_name(batch_name):
+    """get meta data from batch name formatted as above"""
+    seedid, batch_start, sampling_rate = batch_name.split("_")
+
+    batch_start = UTCDateTime(
+               year=int(batch_start.split("Y")[-1].split('J')[0]),
+             julday=int(batch_start.split("J")[-1].split('H')[0]),
+               hour=int(batch_start.split("H")[-1].split('M')[0]),
+             minute=int(batch_start.split("M")[-1].split('S')[0]),
+             second=int(batch_start.split("S")[-1].split('.')[0]),
+        microsecond=int(batch_start.split("S")[-1].split('.')[1]) * 1000000)
+
+    sampling_rate = float(sampling_rate.split('Hz')[0])
+
+    return seedid, batch_start, sampling_rate
 
 
 class Config(object):
@@ -374,10 +395,16 @@ class DataReader_mseed(DataReader):
             raise e
         if False:
             # test reader outside the parallel app
-            self.read_mseed(
+            seedid, data, timearray = self.read_mseed(
                 efile="./sds/2017/XD/S0316/EHE.D/XD.S0316.00.EHE.D.2017.222",
                 nfile="./sds/2017/XD/S0316/EHN.D/XD.S0316.00.EHN.D.2017.222",
                 zfile="./sds/2017/XD/S0316/EHZ.D/XD.S0316.00.EHZ.D.2017.222")
+            assert not np.isnan(timearray).any()
+            for _ in timearray:
+                try:UTCDateTime(_)
+                except:
+                    raise ValueError(_)
+            raise ValueError(seedid, data.shape, timearray.shape)
 
     def add_placeholder(self):
         self.sample_placeholder = tf.placeholder(dtype=tf.float32, shape=None)
@@ -422,6 +449,10 @@ class DataReader_mseed(DataReader):
             assert len(st) == 1  # QC
             assert st[0].stats.sampling_rate == estream[0].stats.sampling_rate  # QC
 
+        seedid = "{}.{}.{}.{}.{}".format(
+            st[0].stats.network, st[0].stats.station, st[0].stats.location,
+            st[0].stats.channel[:2], st[0].stats.mseed.dataquality)
+
         data = np.vstack([st[0].data for st in [estream, nstream, zstream]])
 
         start = zstream[0].stats.starttime
@@ -452,17 +483,20 @@ class DataReader_mseed(DataReader):
 
         # naive version, do exactly the same with time array as with the data
         # to ensure synchronization is preserved
-        timearray = np.hstack([
-            timearray,
-            np.nan * np.zeros_like(timearray[:self.input_length // 2]),
-            timearray[:-self.input_length // 2]])
+        if False:
+            timearray = np.hstack([
+                timearray,
+                np.nan * np.zeros_like(timearray[:self.input_length // 2]),
+                timearray[:-self.input_length // 2]])
+        else:
+            timearray = np.hstack([timearray, timearray - self.input_length // 2 * dt])
 
         # one depth (axis 0) per component E, N, Z
         # then one raw per window
         # one column per sample in the window
         data = data.reshape((3, -1, self.input_length))
-        timearray = timearray.reshape((3, -1, self.input_length))  # naive
-        timearray = timearray[0, :, 0]  # keep only the starttime of each window in s since epoch
+        timearray = timearray.reshape((-1, self.input_length))  # naive
+        timearray = timearray[:, 0]  # keep only the starttime of each window in s since epoch
 
         # depths become the window numbers
         # lines become the samples inside the windows
@@ -470,7 +504,7 @@ class DataReader_mseed(DataReader):
         # then a 1d axis is added in 2nd dimension
         data = data.transpose(1, 2, 0)[:, :, np.newaxis, :]
 
-        return data, timearray
+        return seedid, data, timearray
 
     def thread_main(self, sess, n_threads=1, start=0):
         # raise NotImplementedError('update this method so it can receive 3 indep mseed files for channels E, N, Z')
@@ -478,6 +512,7 @@ class DataReader_mseed(DataReader):
             #fname = self.data_list.iloc[i]['fname']
             #fp = os.path.join(self.data_dir, fname)
 
+            # get station indications from csv, may include wildcards
             network = self.data_list.iloc[i]['network']           # expects FR
             station = self.data_list.iloc[i]['station']           # expects ABCD
             location = self.data_list.iloc[i]['location']         # expects 00 or * or none
@@ -502,10 +537,14 @@ class DataReader_mseed(DataReader):
                     filenames.append(filepath)
 
                 else:
-                    import glob
                     ls = glob.iglob(filepath)
                     try:
                         filename = next(ls)
+                        try:
+                            next(ls)
+                            raise ValueError('there are more than one file responding to {}'.format(filepath))
+                        except StopIteration:
+                            pass
                     except StopIteration:
                         raise ValueError('no file responding to {}'.format(filepath))
                     finally:
@@ -514,7 +553,7 @@ class DataReader_mseed(DataReader):
 
             try:
                 # meta = self.read_mseed(fp, [E, N, Z])
-                data, timearray = self.read_mseed(
+                seedid, data, timearray = self.read_mseed(
                     efile=filenames[0],
                     nfile=filenames[1],
                     zfile=filenames[2])
@@ -531,14 +570,31 @@ class DataReader_mseed(DataReader):
                       '{}'.format(e.__class__.__name__))
                 raise e
 
-            for i in tqdm(range(data.shape[0]), desc=r"{fp}"):
+            for i in tqdm(
+                    range(data.shape[0]),
+                    desc=f"{seedid}.{year}.{julday}"):
+                batch_starttime_timestamp = timearray[i]
+                batch_starttime = UTCDateTime(batch_starttime_timestamp)
+
+                batch_name = \
+                    BATCHNAME.format(
+                    seedid=seedid,
+                    year=batch_starttime.year,
+                    julday=batch_starttime.julday,
+                    hour=batch_starttime.hour,
+                    minute=batch_starttime.minute,
+                    second=batch_starttime.second + 1.e-6 * batch_starttime.microsecond,
+                    sampling_rate=self.config.sampling_rate)
+
                 # loop over windows
                 sample = data[i]
                 sample = self.normalize(sample)
                 sample = self.adjust_missingchannels(sample)
                 sess.run(self.enqueue,
-                         feed_dict={self.sample_placeholder: sample,
-                                    self.fname_placeholder: r"{fname}_{i * self.input_length}"})
+                         feed_dict={
+                             self.sample_placeholder: sample,
+                             # self.fname_placeholder: f"{seedid}.{year}.{julday}_{i * self.input_length}"})
+                             self.fname_placeholder: batch_name})
 
 
 if __name__ == "__main__":

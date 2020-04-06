@@ -1,2 +1,5 @@
 network,station,location,dataquality,channel,year,julday
 XD,S0316,*,?,EH?,2017,222
+XD,S0516,*,?,EH?,2017,222
+XD,S0319,*,?,EH?,2017,222
+XD,S0519,*,?,EH?,2017,222
