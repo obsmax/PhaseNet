@@ -7,5 +7,6 @@ phasenet_run.py \
     --data_list=fname.csv \
     --output_dir=output \
     --batch_size=20 \
+    --save_result \
     --input_mseed \
 #    --plot_figure

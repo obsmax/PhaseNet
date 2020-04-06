@@ -8,7 +8,7 @@ import time
 import logging
 from PhaseNet.model import Model
 from PhaseNet.data_reader import Config, DataReader, DataReader_test, DataReader_pred, DataReader_mseed
-from PhaseNet.data_reader import decode_batch_name
+from PhaseNet.util import save_predictions_to_hdf5_archive, reform_mseed_files_from_predictions
 from PhaseNet.util import *
 from tqdm import tqdm
 import pandas as pd
@@ -16,6 +16,7 @@ import threading
 import multiprocessing
 from functools import partial
 import sys
+import h5py
 
 
 def read_args():
@@ -440,7 +441,6 @@ def pred_fn(args, data_reader, figure_dir=None, result_dir=None, log_dir=None):
             os.makedirs(figure_dir)
 
     if args.save_result and (result_dir is None):
-        raise ValueError('use hdf5 instead')
         result_dir = os.path.join(log_dir, 'results')
         if not os.path.exists(result_dir):
             os.makedirs(result_dir)
@@ -476,13 +476,16 @@ def pred_fn(args, data_reader, figure_dir=None, result_dir=None, log_dir=None):
         else:
             num_pool = 2
         pool = multiprocessing.Pool(num_pool)
-        fclog = open(os.path.join(log_dir, args.fpred + '.csv'), 'w')
 
         if args.input_mseed:
+            if not args.save_result:
+                raise ValueError('need option --save_result')
+            assert result_dir is not None
+            hdf5_archive = os.path.join(result_dir, "sample_results.hdf5")
 
             # write pick file header
             # fclog.write("batchname,itp,tp_prob,its,ts_prob\n")
-            fclog.write("seedid,phasename,time,probability\n")
+            # fclog.write("seedid,phasename,time,probability\n")
 
             while True:
                 if sess.run(data_reader.queue.size()) >= args.batch_size:
@@ -490,60 +493,70 @@ def pred_fn(args, data_reader, figure_dir=None, result_dir=None, log_dir=None):
                 time.sleep(2)
                 # print("waiting data_reader...")
 
-            while True:
-                last_batch = True
-                for i in range(10):
-                    if sess.run(data_reader.queue.size()) >= args.batch_size:
-                        last_batch = False
+            with h5py.File(hdf5_archive, 'w') as hdf5_pointer:
+                while True:
+                    last_batch = True
+                    for i in range(10):
+                        if sess.run(data_reader.queue.size()) >= args.batch_size:
+                            last_batch = False
+                            break
+                        time.sleep(1)
+                    if last_batch:
+                        for t in threads:
+                            t.join()
+                        last_size = sess.run(data_reader.queue.size())
+                        print(f"Last batch: {last_size} samples")
+                        sess.run(data_reader.queue.close())
+                        if last_size == 0:
+                            break
+
+                    pred_batch, X_batch, fname_batch = \
+                        sess.run([model.preds, batch[0], batch[1]],
+                                 feed_dict={model.drop_rate: 0,
+                                            model.is_training: False})
+
+                    # place predictions results into a large hdf5 archive
+                    save_predictions_to_hdf5_archive(
+                        hdf5_pointer, fname_batch, pred_batch)
+
+                    # # picks
+                    # picks_batch = pool.map(
+                    #     partial(postprocessing_thread,
+                    #             pred=pred_batch,
+                    #             X=X_batch,
+                    #             fname=fname_batch,
+                    #             result_dir=result_dir,
+                    #             figure_dir=figure_dir,
+                    #             args=args),
+                    #     range(len(pred_batch)))
+                    #
+                    # # get the picks and write it to csv (picks.csv)
+                    # for i in range(len(fname_batch)):
+                    #     seedid, batch_start, sampling_rate, _ = \
+                    #         decode_sample_name(fname_batch[i].decode())
+                    #
+                    #     itp, tpprob = picks_batch[i][0]
+                    #     its, tsprob = picks_batch[i][1]
+                    #
+                    #     for idx, pb in zip(itp, tpprob):
+                    #         # find pick time from batchname metadata
+                    #         tpick = batch_start + idx / sampling_rate
+                    #         fclog.write(f"{seedid},P,{tpick},{pb}\n")
+                    #
+                    #     for idx, pb in zip(its, tsprob):
+                    #         tpick = batch_start + idx / sampling_rate
+                    #         fclog.write(f"{seedid},S,{tpick},{pb}\n")
+
+                    if last_batch:
                         break
-                    time.sleep(1)
-                if last_batch:
-                    for t in threads:
-                        t.join()
-                    last_size = sess.run(data_reader.queue.size())
-                    print(f"Last batch: {last_size} samples")
-                    sess.run(data_reader.queue.close())
-                    if last_size == 0:
-                        break
 
-                pred_batch, X_batch, fname_batch = \
-                    sess.run([model.preds, batch[0], batch[1]],
-                             feed_dict={model.drop_rate: 0,
-                                        model.is_training: False})
-
-                # picks
-                picks_batch = pool.map(
-                    partial(postprocessing_thread,
-                            pred=pred_batch,
-                            X=X_batch,
-                            fname=fname_batch,
-                            result_dir=result_dir,
-                            figure_dir=figure_dir,
-                            args=args),
-                    range(len(pred_batch)))
-
-                # get the picks and write it to csv (picks.csv)
-                for i in range(len(fname_batch)):
-                    seedid, batch_start, sampling_rate, _ = \
-                        decode_batch_name(fname_batch[i].decode())
-
-                    itp, tpprob = picks_batch[i][0]
-                    its, tsprob = picks_batch[i][1]
-
-                    for idx, pb in zip(itp, tpprob):
-                        # find pick time from batchname metadata
-                        tpick = batch_start + idx / sampling_rate
-                        fclog.write(f"{seedid},P,{tpick},{pb}\n")
-
-                    for idx, pb in zip(its, tsprob):
-                        tpick = batch_start + idx / sampling_rate
-                        fclog.write(f"{seedid},S,{tpick},{pb}\n")
-
-                if last_batch:
-                    break
+            with h5py.File(hdf5_archive, 'r') as hdf5_pointer:
+                reform_mseed_files_from_predictions(
+                    hdf5_pointer, result_dir)
 
         else:
             # write pick file header
+            fclog = open(os.path.join(log_dir, args.fpred + '.csv'), 'w')
             fclog.write("batchname,itp,tp_prob,its,ts_prob\n")
 
             for step in tqdm(range(0, data_reader.num_data, args.batch_size), desc="Pred"):
@@ -568,7 +581,7 @@ def pred_fn(args, data_reader, figure_dir=None, result_dir=None, log_dir=None):
                                                   picks_batch[i][1][0], picks_batch[i][1][1]))
                 # fclog.flush()
 
-        fclog.close()
+            fclog.close()
         print("Done")
 
     return 0

@@ -15,29 +15,29 @@ import glob
 from obspy import UTCDateTime
 
 
-
 SDSPATH = os.path.join(
     "{data_dir}", "{year}",
     "{network}", "{station}",
     "{channel}.{dataquality}",
     "{network}.{station}.{location}.{channel}.{dataquality}"
-    ".{year:04.0f}.{julday:03.0f}")
+    ".{year:04d}.{julday:03d}")
 
 SEEDID = "{network:s}.{station:s}.{location:s}.{channel2:2s}.{dataquality:1s}"
 
-BATCHNAME = "{seedid:s}_Y{year:04d}J{julday:03d}H{hour:02d}M{minute:02d}S{second:09.6f}_{sampling_rate:f}Hz"
+SAMPLENAME = "{seedid:s}_Y{year:04d}J{julday:03d}H{hour:02d}M{minute:02d}S{second:09.6f}_{sampling_rate:f}Hz_NPTS{input_length}"
 
 
-def decode_batch_name(batch_name: str):
+def decode_sample_name(sample_name: str):
     """get meta data from batch name formatted as above"""
     seedid: str
-    batch_start: UTCDateTime
+    sample_start: UTCDateTime
     sampling_rate: float
+    sample_npts: int
     seedid_details: tuple
 
-    seedid, batch_start_s, sampling_rate_s = batch_name.split("_")
+    seedid, batch_start_s, sampling_rate_s, sample_npts_s = sample_name.split("_")
 
-    batch_start = UTCDateTime(
+    sample_start = UTCDateTime(
                year=int(batch_start_s.split("Y")[-1].split('J')[0]),
              julday=int(batch_start_s.split("J")[-1].split('H')[0]),
                hour=int(batch_start_s.split("H")[-1].split('M')[0]),
@@ -47,9 +47,10 @@ def decode_batch_name(batch_name: str):
 
     sampling_rate = float(sampling_rate_s.split('Hz')[0])
 
+    sample_npts = int(sample_npts_s.split('NPTS')[-1])
     network, station, location, channel2, dataquality = seedid.split('.')
     seedid_details = (network, station, location, channel2, dataquality)
-    return seedid, batch_start, sampling_rate, seedid_details
+    return seedid, sample_start, sampling_rate, sample_npts, seedid_details
 
 
 class Config(object):
@@ -586,18 +587,19 @@ class DataReader_mseed(DataReader):
             for i in tqdm(
                     range(data.shape[0]),
                     desc=f"{seedid}.{year}.{julday}"):
-                batch_starttime_timestamp = timearray[i]
-                batch_starttime = UTCDateTime(batch_starttime_timestamp)
+                sample_starttime_timestamp = timearray[i]
+                sample_starttime = UTCDateTime(sample_starttime_timestamp)
 
-                batch_name = \
-                    BATCHNAME.format(
+                sample_name = \
+                    SAMPLENAME.format(
                     seedid=seedid,
-                    year=batch_starttime.year,
-                    julday=batch_starttime.julday,
-                    hour=batch_starttime.hour,
-                    minute=batch_starttime.minute,
-                    second=batch_starttime.second + 1.e-6 * batch_starttime.microsecond,
-                    sampling_rate=self.config.sampling_rate)
+                    year=sample_starttime.year,
+                    julday=sample_starttime.julday,
+                    hour=sample_starttime.hour,
+                    minute=sample_starttime.minute,
+                    second=sample_starttime.second + 1.e-6 * sample_starttime.microsecond,
+                    sampling_rate=self.config.sampling_rate,
+                    input_length=self.input_length)
 
                 # loop over windows
                 sample = data[i]
@@ -607,7 +609,7 @@ class DataReader_mseed(DataReader):
                          feed_dict={
                              self.sample_placeholder: sample,
                              # self.fname_placeholder: f"{seedid}.{year}.{julday}_{i * self.input_length}"})
-                             self.fname_placeholder: batch_name})
+                             self.fname_placeholder: sample_name})
 
 
 if __name__ == "__main__":

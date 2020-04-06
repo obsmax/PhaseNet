@@ -5,7 +5,7 @@ matplotlib.use('agg')
 import matplotlib.pyplot as plt
 import numpy as np
 import os
-from PhaseNet.data_reader import Config, decode_batch_name
+from PhaseNet.data_reader import Config, decode_sample_name
 from PhaseNet.detect_peaks import detect_peaks
 import logging
 from obspy.core.trace import Trace
@@ -149,63 +149,156 @@ def plot_result_thread(
     return 0
 
 
-def extract_preds_sds_thread(
-        i, pred, fname=None, result_dir=None):
+def save_predictions_to_hdf5_archive(hdf5_pointer, fname_batch, pred_batch):
+    """
+    :param hdf5_pointer:
+    :param fname_batch:
+    :param pred_batch:
+    """
 
-    PREDPATH = os.path.join(
-        "{result_dir}",
-        "{year}", "{network}", "{station}", "{channel2}{phasename}.{dataquality}")
+    # location of the sample results inside the hdf5 archive
+    HDF5PATH = "{year:04d}/{network:s}/{station:s}/{channel2:2s}{phasename:1s}.{dataquality:1s}/{julday}"
 
-    PREDFILE = "{network}.{station}.{location}.{channel2}{phasename}.{dataquality}." \
-               "{year:04d}.{julday:03d}.{hour:02d}.{minute:02d}.{second:09.6f}.mseed"
+    for i in range(len(fname_batch)):
+        seedid, sample_start, sampling_rate, sample_npts, \
+        (network, station, location, channel2, dataquality) = \
+            decode_sample_name(sample_name=fname_batch[i].decode())
 
-    if (fname is not None) and (result_dir is not None):
-        seedid, batch_start, sampling_rate, \
-            (network, station, location, channel2, dataquality) = \
-            decode_batch_name(batch_name=fname[i].decode())
-
+        midtime = sample_start + 0.5 * (sample_npts - 1) / sampling_rate
         for nphase, phasename in enumerate("PS"):
-            pathout = PREDPATH.format(
-                result_dir=result_dir,
-                year=batch_start.year,
-                julday=batch_start.julday,
-                network=network,
-                station=station,
-                location=location,
-                channel2=channel2,
-                phasename=phasename,
+            groupname = HDF5PATH.format(
+                year=midtime.year,
+                julday=midtime.julday,
+                network=network, station=station,
+                channel2=channel2, phasename=phasename,
                 dataquality=dataquality)
 
-            if not os.path.isdir(pathout):
-                print(f'creating : {pathout}')
-                os.makedirs(pathout, exist_ok=True)
+            # AVOID THE EDGES OF THE SAMPLE (because of the 50% overlap)
+            n = sample_npts // 4
 
-            fileout = PREDFILE.format(
-                year=batch_start.year,
-                julday=batch_start.julday,
-                hour=batch_start.hour,
-                minute=batch_start.minute,
-                second=batch_start.second + 1.e-6 * batch_start.microsecond,
-                network=network,
-                station=station,
-                location=location,
-                channel2=channel2,
-                phasename=phasename,
-                dataquality=dataquality,
-                i=i)
+            try:
+                grp = hdf5_pointer[groupname]
+            except KeyError:
+                grp = hdf5_pointer.create_group(groupname)
 
-            trace = Trace(
-                data=pred[i, :, 0, nphase+1],
-                header={
-                    "network": network,
-                    "station": station,
-                    "location": location,
-                    "channel": channel2 + phasename,
-                    "starttime": batch_start,
-                    "sampling_rate": sampling_rate})
+            sample_dataset = grp.create_dataset(
+                fname_batch[i].decode(),
+                data=255 * pred_batch[i, n:-n, 0, nphase + 1],  # 1 for P and 2 for S
+                dtype=np.dtype('uint8'))  # to save disk space, proba scaled by 255
 
-            trace.write(
-                os.path.join(pathout, fileout), format="MSEED")
+            sample_dataset.attrs["network"] = network
+            sample_dataset.attrs["station"] = station
+            sample_dataset.attrs["location"] = location
+            sample_dataset.attrs["channel"] = channel2 + phasename
+            sample_dataset.attrs["dataquality"] = dataquality
+            sample_dataset.attrs["starttime"] = str(sample_start + n / sampling_rate)
+            sample_dataset.attrs["sampling_rate"] = sampling_rate
+
+
+def reform_mseed_files_from_predictions(hdf5_pointer, result_dir):
+    MSEEDFILE = \
+        os.path.join("{result_dir}", "{year}", "{network}", "{station}", "{channeldq}",
+                     "{network}.{station}.{location}.{channeldq}.{year}.{julday}")
+
+    from obspy.core import Stream, Trace, UTCDateTime
+    for year, ygrp in hdf5_pointer.items():
+        for network, ngrp in ygrp.items():
+            for station, sgrp in ngrp.items():
+                for channeldq, cgrp in sgrp.items():
+                    for julday, jgrp in cgrp.items():
+                        # group sample predictions per julian day
+                        stream = Stream([])
+                        trace = None
+                        for sample_dataset_name, sample_dataset in jgrp.items():
+                            starttime = UTCDateTime(sample_dataset.attrs["starttime"])
+
+                            trace = Trace(
+                                #data=sample_dataset[:],
+                                data=np.asarray(sample_dataset[:], np.dtype('int32')),
+                                header={
+                                    "network":sample_dataset.attrs['network'],
+                                    "station": sample_dataset.attrs['station'],
+                                    "location": sample_dataset.attrs['location'],
+                                    "channel": sample_dataset.attrs['channel'],
+                                    "starttime": starttime,
+                                    "sampling_rate": sample_dataset.attrs["sampling_rate"],
+                                    "mseed": {"dataquality": sample_dataset.attrs["dataquality"]}})
+
+                            stream.append(trace)
+                        if not len(stream):
+                            continue
+
+                        mseedfile = MSEEDFILE.format(
+                            result_dir=result_dir, year=year, julday=julday,
+                            network=network, station=station,
+                            location=trace.stats.location,
+                            channeldq=channeldq)
+                        print(mseedfile)
+
+                        os.makedirs(os.path.dirname(mseedfile), exist_ok=True)
+                        stream.merge(fill_value=0, interpolation_samples=0)
+                        stream[0].trim(
+                            UTCDateTime(int(year), julday=int(julday), hour=0),
+                            UTCDateTime(int(year), julday=int(julday), hour=0) + 24. * 3600.)
+                        stream.write(mseedfile, format="MSEED")
+
+# def extract_preds_sds_thread(
+#         i, pred, fname=None, result_dir=None):
+#
+#     PREDPATH = os.path.join(
+#         "{result_dir}",
+#         "{year}", "{network}", "{station}", "{channel2}{phasename}.{dataquality}")
+#
+#     PREDFILE = "{network}.{station}.{location}.{channel2}{phasename}.{dataquality}." \
+#                "{year:04d}.{julday:03d}.{hour:02d}.{minute:02d}.{second:09.6f}.mseed"
+#
+#     if (fname is not None) and (result_dir is not None):
+#         seedid, batch_start, sampling_rate, \
+#             (network, station, location, channel2, dataquality) = \
+#             decode_sample_name(sample_name=fname[i].decode())
+#
+#         for nphase, phasename in enumerate("PS"):
+#             pathout = PREDPATH.format(
+#                 result_dir=result_dir,
+#                 year=batch_start.year,
+#                 julday=batch_start.julday,
+#                 network=network,
+#                 station=station,
+#                 location=location,
+#                 channel2=channel2,
+#                 phasename=phasename,
+#                 dataquality=dataquality)
+#
+#             if not os.path.isdir(pathout):
+#                 print(f'creating : {pathout}')
+#                 os.makedirs(pathout, exist_ok=True)
+#
+#             fileout = PREDFILE.format(
+#                 year=batch_start.year,
+#                 julday=batch_start.julday,
+#                 hour=batch_start.hour,
+#                 minute=batch_start.minute,
+#                 second=batch_start.second + 1.e-6 * batch_start.microsecond,
+#                 network=network,
+#                 station=station,
+#                 location=location,
+#                 channel2=channel2,
+#                 phasename=phasename,
+#                 dataquality=dataquality,
+#                 i=i)
+#
+#             trace = Trace(
+#                 data=pred[i, :, 0, nphase+1],
+#                 header={
+#                     "network": network,
+#                     "station": station,
+#                     "location": location,
+#                     "channel": channel2 + phasename,
+#                     "starttime": batch_start,
+#                     "sampling_rate": sampling_rate})
+#
+#             trace.write(
+#                 os.path.join(pathout, fileout), format="MSEED")
 
 
 def postprocessing_thread(i, pred, X, Y=None, itp=None, its=None, fname=None, result_dir=None, figure_dir=None,

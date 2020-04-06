@@ -5,3 +5,4 @@ tqdm
 scipy
 libiconv
 obspy
+h5py
