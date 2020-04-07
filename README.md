@@ -12,9 +12,9 @@
     - The probability series can be used for further usages like network associations...
 - See example usage on anonymous data in demo/demo.sh                   
 - **Caution** : mode others than prediction (train/test/...) may have been altered by these changes, use the original fork for these modes. 
-Please use with care, and refer to the original fork in case of doubts. I apology to the original developers if some of the functionalities of the code have been altered or if the code does not follow the original goals. 
+Please use with care, and refer to the original fork in case of doubts. I apology to the original developers if some of the functionalities of the code have been altered or if the modifications do not follow the original goals and conventions. 
 
-## 1. Install using Anaconda
+### 1. Install using Anaconda
 ```
 # move to the installation directory  PhaseNet repo
 conda create --name venv python=3.6
