@@ -457,10 +457,19 @@ class DataReader_mseed(DataReader):
         for st in estream, nstream, zstream:
             st.detrend('constant')
             st.merge(fill_value=0)
+
+            if not len(st) == 1:
+                raise ValueError('merge failed')# QC
+
             st.trim(UTCDateTime(starttime),
-                    UTCDateTime(endtime), pad=True, fill_value=0.)
-            assert len(st) == 1  # QC
-            assert st[0].stats.sampling_rate == estream[0].stats.sampling_rate  # QC
+                    UTCDateTime(endtime),
+                    pad=True, fill_value=0.)
+
+            if not st[0].stats.sampling_rate == estream[0].stats.sampling_rate:
+                raise ValueError('inconsistent sampling rates')  # QC
+
+            if not np.abs(st[0].stats.starttime.timestamp - estream[0].stats.starttime.timestamp) < 1.e-6:
+                raise ValueError('inconsistent starttimes')  # QC
 
         seedid = SEEDID.format(
             network=st[0].stats.network,
