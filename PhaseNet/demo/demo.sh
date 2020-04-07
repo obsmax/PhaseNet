@@ -12,6 +12,10 @@
 #       - one line per day of 3 component data
 #       - use wildcards only for unkown fields and for the component letter (see demo/fname.csv)
 # output picks in output_dir/picks.csv
+
+# to generate a csv file use
+# sds_to_csv.py ./sds > fname.csv
+
 phasenet_run.py \
     --mode pred \
     --model_dir ../model/190703-214543 \
