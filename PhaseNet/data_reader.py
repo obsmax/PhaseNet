@@ -26,7 +26,7 @@ SEEDID = "{network:s}.{station:s}.{location:s}.{channel2:2s}.{dataquality:1s}"
 
 # use a more detailed name for each sample to preserve the time information
 SAMPLENAME = \
-    "{seedid:s}_Y{year:04d}J{julday:03d}H{hour:02d}M{minute:02d}S{second:09.6f}_" \
+    "{seedid:s}_{year:04d}-{julday:03d}-{hour:02d}-{minute:02d}-{second:09.6f}_" \
     "{sampling_rate:f}Hz_NPTS{input_length}"
 
 
@@ -38,15 +38,22 @@ def decode_sample_name(sample_name: str):
     sample_npts: int
     seedid_details: tuple
 
-    seedid, batch_start_s, sampling_rate_s, sample_npts_s = sample_name.split("_")
+    seedid, sample_start_s, sampling_rate_s, sample_npts_s = sample_name.split("_")
+    try:
+        year, julday, hour, minute, second = sample_start_s.split('-')
+        second, microsecond = second.split('.')
 
-    sample_start = UTCDateTime(
-               year=int(batch_start_s.split("Y")[-1].split('J')[0]),
-             julday=int(batch_start_s.split("J")[-1].split('H')[0]),
-               hour=int(batch_start_s.split("H")[-1].split('M')[0]),
-             minute=int(batch_start_s.split("M")[-1].split('S')[0]),
-             second=int(batch_start_s.split("S")[-1].split('.')[0]),
-        microsecond=int(batch_start_s.split("S")[-1].split('.')[1]) * 1000000)
+        sample_start = UTCDateTime(
+               year=int(year),
+             julday=int(julday),
+               hour=int(hour),
+             minute=int(minute),
+             second=int(second),
+        microsecond=int(microsecond))
+    except Exception as e:
+        # for _ in range(1000):
+        #     print(year, julday, hour, minute, second, microsecond, str(e))
+        raise ValueError(f'could not decode sample name {sample_name}')
 
     sampling_rate = float(sampling_rate_s.split('Hz')[0])
 
@@ -463,7 +470,7 @@ class DataReader_mseed(DataReader):
 
             st.trim(UTCDateTime(starttime),
                     UTCDateTime(endtime),
-                    pad=True, fill_value=0.)
+                    pad=True, fill_value=0)
 
             if not st[0].stats.sampling_rate == estream[0].stats.sampling_rate:
                 raise ValueError('inconsistent sampling rates')  # QC
