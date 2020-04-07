@@ -27,9 +27,10 @@ phasenet_run.py \
     --save_result
 #    --plot_figure  # disabled in this version
 
-
 phasenet_disp.py \
+    --mode all \
     --data_dir sds \
     --output_dir output \
-    --seedid "*.AAAA.*.EH?.D" "*.BBBB.*.EH?.D" "*.CCCC.*.EH?.D" "*.DDDD.*.EH?.D" \
-    --day 2000.223
+    --seedid "*.*.*.EH?.D" \
+    --time 2000.223.10.00 2000.223.10.05   \
+    --decim 5000
