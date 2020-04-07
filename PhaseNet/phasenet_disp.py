@@ -5,7 +5,8 @@ import argparse
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from obspy import UTCDateTime
+from matplotlib.collections import LineCollection
+from obspy import read, UTCDateTime
 
 
 # conventional path name for SDS data archive
@@ -35,8 +36,12 @@ def read_args():
                              "network.station.location.channel.dataquality")
 
     parser.add_argument("--day",
+                        nargs="+",
                         default=None,
-                        help="day to display yyyy.jjj")
+                        help="day to display yyyy.jjj or day range ystart.jstart yend.jend")
+
+    parser.add_argument("--picks_only",
+                        action="store_true")
 
     if len(sys.argv) == 1:
         # print help if no arguments passed
@@ -62,16 +67,34 @@ def find_input_data(args):
     if not os.path.isfile(pickfile):
         raise IOError(f'{pickfile} not found')
 
-    day = args.day
-    year, julday = np.array(day.split('.'), int)
-    starttime = UTCDateTime(year, julday=julday)
-    endtime = starttime + 24. * 3600.
+    if len(args.day) == 1:
+        day = args.day[0]
+        year, julday = np.array(day.split('.'), int)
+        starttime = UTCDateTime(year, julday=julday)
+        endtime = starttime + 24. * 3600.
+
+        year_days = [(year, julday)]
+
+    elif len(args.day) == 2:
+        daystart, dayend = args.day
+        yearstart, juldaystart = np.array(daystart.split('.'), int)
+        yearend, juldayend = np.array(dayend.split('.'), int)
+        starttime = UTCDateTime(yearstart, julday=juldaystart)
+        endtime = UTCDateTime(yearend, julday=juldayend) + 24. * 3600.
+        if not endtime > starttime:
+            raise ValueError
+
+        t = starttime + 12. * 3600.
+        year_days = []
+        while t < endtime:
+            year_days.append((t.year, t.julday))
+            t += 24. * 3600.
+
+    else:
+        raise ValueError(args.day)
 
     pickdata = pd.read_csv(pickfile, header=0)
     pickdata['time'] = np.asarray([UTCDateTime(_).timestamp for _ in pickdata['time']], float)
-    # pickdata['network'], pickdata['station'], pickdata['location'], \
-    #     pickdata['channel2'], pickdata['dataquality'] = \
-    #     [np.array(_, str) for _ in zip(*[_.split('.') for _ in pickdata['seedid']])]
 
     time_selection = (starttime.timestamp <= pickdata['time']) & \
                      (pickdata['time'] <= endtime.timestamp)
@@ -79,73 +102,78 @@ def find_input_data(args):
     seedids = args.seedid
     input_data = {}
 
-    for seedid in seedids:
-        # seedid may include wildcards
-        network, station, location, channel, dataquality =\
-            seedid.split('.')
+    for year, julday in year_days:
+        for seedid in seedids:
+            # seedid may include wildcards
+            network, station, location, channel, dataquality =\
+                seedid.split('.')
 
-        mseed_search_path = SDSPATH.format(
-            data_dir=data_dir,
-            network=network, station=station,
-            location=location, channel=channel,
-            dataquality=dataquality,
-            year=year, julday=julday)
+            mseed_search_path = SDSPATH.format(
+                data_dir=data_dir,
+                network=network, station=station,
+                location=location, channel=channel,
+                dataquality=dataquality,
+                year=year, julday=julday)
 
-        mseedfiles = glob.glob(mseed_search_path)
-        if not len(mseedfiles):
-            warnings.warn(f'no mseed file found for {mseed_search_path}')
-            continue
+            mseedfiles = glob.glob(mseed_search_path)
+            if not len(mseedfiles):
+                warnings.warn(f'no mseed file found for {mseed_search_path}')
+                continue
 
-        for mseedfile in mseedfiles:
+            for mseedfile in mseedfiles:
 
-            # seedid items, no more wildcards
-            network, station, location, channel, dataquality = \
-                os.path.basename(mseedfile).split('.')[:5]
+                # seedid items, no more wildcards
+                network, station, location, channel, dataquality = \
+                    os.path.basename(mseedfile).split('.')[:5]
 
-            station_key = f"{network}.{station}.{location}.{channel[:2]}.{dataquality}"
-            component = channel[2]
+                station_key = f"{network}.{station}.{location}.{channel[:2]}.{dataquality}"
+                daykey = f'{year}.{julday}'
+                component = channel[2]
 
-            #
-            input_data.setdefault(station_key, {}).setdefault(component, mseedfile)
+                # create entries if not exist
+                input_data \
+                    .setdefault(station_key, {}) \
+                    .setdefault(daykey, {}) \
+                    .setdefault(component, mseedfile)
 
-            # find rows in pick.csv matching the current station
-            seedid_selection = pickdata['seedid'] == station_key
-            pick_selection = time_selection & seedid_selection
-            if not pick_selection.any():
-                warnings.warn(f'no picks found for {os.path.basename(mseedfile)}')
+                # find rows in pick.csv matching the current station
+                seedid_selection = pickdata['seedid'] == station_key
+                pick_selection = time_selection & seedid_selection
+                if not pick_selection.any():
+                    warnings.warn(f'no picks found for {os.path.basename(mseedfile)}')
 
-            input_data[station_key]["picks"] = {
-                'phasenames': pickdata["phasename"][pick_selection],
-                'times': pickdata["time"][pick_selection],
-                'probabilities': pickdata["probability"][pick_selection]}
+                input_data[station_key][daykey]["picks"] = {
+                    'phasenames': pickdata["phasename"][pick_selection],
+                    'times': pickdata["time"][pick_selection],
+                    'probabilities': pickdata["probability"][pick_selection]}
 
-            # find prediction traces if any
-            for phasename in "PS":
-                pred_search_path = SDSPATH.format(
-                    data_dir=os.path.join(output_dir, "results"),
-                    network=network, station=station,
-                    location=location,
-                    channel=channel[:2] + phasename,
-                    dataquality=dataquality,
-                    year=year, julday=julday)
+                # find prediction traces if any
+                for phasename in "PS":
+                    pred_search_path = SDSPATH.format(
+                        data_dir=os.path.join(output_dir, "results"),
+                        network=network, station=station,
+                        location=location,
+                        channel=channel[:2] + phasename,
+                        dataquality=dataquality,
+                        year=year, julday=julday)
 
-                predfiles = glob.glob(pred_search_path)
-                if not len(predfiles):
-                    warnings.warn(f'no prediction file found for {pred_search_path}')
+                    predfiles = glob.glob(pred_search_path)
+                    if not len(predfiles):
+                        warnings.warn(f'no prediction file found for {pred_search_path}')
 
-                for predfile in predfiles:
-                    input_data[station_key].setdefault(phasename, predfile)
+                    for predfile in predfiles:
+                        input_data[station_key][daykey].setdefault(phasename, predfile)
     return input_data
 
 
-def display_data(stationkey, station_entry):
-    import obspy
+def display_data(stationkey, daykey, station_day_entry):
+
     fig = plt.figure()
     ax = fig.add_subplot(111)
 
     for comp in "ENZPS":
         try:
-            st = obspy.read(station_entry[comp], format="MSEED")
+            st = read(station_day_entry[comp], format="MSEED")
         except KeyError:
             continue
 
@@ -167,28 +195,68 @@ def display_data(stationkey, station_entry):
                 alpha=alpha)
 
     ylim = [-0.5, 3.5]
-    for phasename, time, proba in zip(station_entry['picks']['phasenames'],
-                                      station_entry['picks']['times'],
-                                      station_entry['picks']['probabilities']):
+    for phasename, time, proba in zip(station_day_entry['picks']['phasenames'],
+                                      station_day_entry['picks']['times'],
+                                      station_day_entry['picks']['probabilities']):
+        # TODO use linecollections
         color = {"Z": 'k', "N": "k", "E": "k", "P": "r", "S": "b"}[phasename]
         ax.plot([time, time], ylim,
                 color=color,
                 alpha=proba)
 
     ax.set_ylim(ylim)
-    ax.set_title(stationkey)
+    ax.set_title(f'{stationkey} {daykey}')
     return fig
+
+
+def display_data_picks_only(input_data):
+
+    fig = plt.figure()
+    fig.subplots_adjust(left=0.2)
+    ax = fig.add_subplot(111)
+
+    segments = []
+    colors = []
+
+    tmin, tmax = np.inf, -np.inf
+    ylabels = []
+    for nsta, (stationkey, day_entry) in enumerate(input_data.items()):
+        for daykey, station_day_entry in day_entry.items():
+
+            for phasename, time, proba in \
+                zip(station_day_entry['picks']['phasenames'],
+                    station_day_entry['picks']['times'],
+                    station_day_entry['picks']['probabilities']):
+
+                segments.append(np.column_stack(([time, time], [nsta - 0.5, nsta + 0.5])))
+                colors.append({"P": 'r', 'S': 'b'}[phasename])
+                tmin = min([tmin, time])
+                tmax = max([tmax, time])
+        ylabels.append(stationkey)
+
+    lc = LineCollection(segments, colors=colors)
+    ax.add_collection(lc)
+    ax.set_xlim(tmin, tmax)
+    ax.set_ylim(-0.5, nsta + 0.5)
+    ax.set_yticks(list(range(nsta+1)))
+    ax.set_yticklabels(ylabels, rotation=45, verticalalignment="top", horizontalalignment="right")
 
 
 def main(args, parser):
     try:
         input_data = find_input_data(args)
         # display_data(mseedfile, predfiles, pickphasenames, picktimes, pickprobas)
-        for stationkey, station_entry in input_data.items():
-
-            fig = display_data(stationkey, station_entry)
+        if args.picks_only:
+            fig = display_data_picks_only(input_data)
             plt.show()
             plt.close(fig)
+
+        else:
+            for stationkey, day_entry in input_data.items():
+                for daykey, station_day_entry in day_entry.items():
+                    fig = display_data(stationkey, daykey, station_day_entry)
+                    plt.show()
+                    plt.close(fig)
 
     except (IOError, Exception) as e:
         parser.print_help()
@@ -197,4 +265,5 @@ def main(args, parser):
 
 if __name__ == '__main__':
     main(*read_args())
+
 
