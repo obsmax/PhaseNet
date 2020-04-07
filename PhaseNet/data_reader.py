@@ -1,18 +1,16 @@
 from __future__ import division
 import os
+import glob
 import threading
 import tensorflow as tf
 import numpy as np
 import pandas as pd
 import logging
-import scipy.interpolate
-
+import warnings
 pd.options.mode.chained_assignment = None
 import obspy
 from obspy.core import UTCDateTime
 from tqdm import tqdm
-import glob
-from obspy import UTCDateTime
 
 
 # conventional path name for SDS data archive
@@ -81,7 +79,7 @@ class DataReader(object):
                  coord,
                  config=Config()):
         self.config = config
-        tmp_list = pd.read_csv(data_list, header=0)
+        tmp_list = pd.read_csv(data_list, header=0, dtype=str)
         self.data_list = tmp_list
         self.num_data = len(self.data_list)
         self.data_dir = data_dir
@@ -441,11 +439,17 @@ class DataReader_mseed(DataReader):
         for st, expected_comp in zip([estream, nstream, zstream], 'ENZ'):
             for tr in st:
                 if tr.stats.sampling_rate != self.config.sampling_rate:
-                    raise ValueError(
-                        'Sampling rate was {}Hz'.format(tr.stats.sampling_rate))
+                    warnings.warn(f'Sampling rate was {tr.stats.sampling_rate}Hz')
+                    # try obspy resampler...
+                    tr.resample(
+                        sampling_rate=self.config.sampling_rate,
+                        no_filter=False,
+                        strict_length=False)
+
                 if tr.stats.channel[2] != expected_comp:
                     raise ValueError(
-                        'Channel was {} and I was expecting ??{}'.format(tr.stats.channel, expected_comp))
+                        f'Channel was {tr.stats.channel} '
+                        f'and I was expecting ??{expected_comp}')
 
                 starttime = np.min([starttime, tr.stats.starttime.timestamp])
                 endtime = np.max([endtime, tr.stats.endtime.timestamp])
@@ -519,17 +523,23 @@ class DataReader_mseed(DataReader):
             #fp = os.path.join(self.data_dir, fname)
 
             # get station indications from csv, may include wildcards
-            network = self.data_list.iloc[i]['network']           # expects FR
-            station = self.data_list.iloc[i]['station']           # expects ABCD
-            location = self.data_list.iloc[i]['location']         # expects 00 or * or none
-            dataquality = self.data_list.iloc[i]['dataquality']   # expects D or ?
-            channel = self.data_list.iloc[i]['channel']           # expects EH* or EH? or HH? ...
-            year = self.data_list.iloc[i]['year']                 # expects 2014
-            julday = self.data_list.iloc[i]['julday']             # expects 014
+            network     = str(self.data_list.iloc[i]['network'])       # expects FR
+            station     = str(self.data_list.iloc[i]['station'])       # expects ABCD
+            location    = str(self.data_list.iloc[i]['location'])      # expects 00 or * or ""
+            dataquality = str(self.data_list.iloc[i]['dataquality'])   # expects D or ?
+            channel     = str(self.data_list.iloc[i]['channel'])       # expects EH* or EH? or HH? ...
+            year        = int(self.data_list.iloc[i]['year'])          # expects 2014
+            julday      = int(self.data_list.iloc[i]['julday'])        # expects 014
 
-            location = location.replace('none', '')
-            assert len(location) == 2 or location == "*" or location == ""
-            assert len(channel) == 3 and channel.endswith('?') or channel.endswith('*')
+            # location = location.replace('none', '')
+            if location in ["*", "??", ""]:
+                pass
+            elif len(location) != 2:
+                raise ValueError(f"unexpected location {location}")
+
+            if not (len(channel) == 3 and channel.endswith('?') or channel.endswith('*')):
+                raise ValueError(f"unexpected channel {channel}, "
+                                 "use something like HH? or EH?")
 
             filenames = []
             for comp in "ENZ":

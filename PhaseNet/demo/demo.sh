@@ -8,7 +8,7 @@
 #       - a hdf5 archihve in output_dir with the details of the P and S probability functions
 #       - a new SDS tree with mseed files that contain the detection functions
 # provide a csv file with the data_list argument,
-#       - header : network,station,location,dataquality,channel,year,julday
+#       - header : network,station,location,channel,dataquality,year,julday
 #       - one line per day of 3 component data
 #       - use wildcards only for unkown fields and for the component letter (see demo/fname.csv)
 # output picks in output_dir/picks.csv
