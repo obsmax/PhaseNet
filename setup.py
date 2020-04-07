@@ -19,6 +19,7 @@ setuptools.setup(
         "Operating System :: Linux",
     ],
     scripts=["PhaseNet/phasenet_run.py",
-             "PhaseNet/phasenet_disp.py"],
+             "PhaseNet/phasenet_disp.py",
+             "PhaseNet/sds_to_csv.py"],
     python_requires='>=3.6',
 )
