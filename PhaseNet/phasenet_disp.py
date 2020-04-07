@@ -254,6 +254,9 @@ def main(args, parser):
         else:
             for stationkey, day_entry in input_data.items():
                 for daykey, station_day_entry in day_entry.items():
+                    if not len(station_day_entry['picks']['times']):
+                        # skip traces with no picks
+                        continue
                     fig = display_data(stationkey, daykey, station_day_entry)
                     plt.show()
                     plt.close(fig)
