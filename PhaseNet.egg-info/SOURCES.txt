@@ -6,6 +6,7 @@ PhaseNet/detect_peaks.py
 PhaseNet/model.py
 PhaseNet/phasenet_disp.py
 PhaseNet/phasenet_run.py
+PhaseNet/sds_to_csv.py
 PhaseNet/util.py
 PhaseNet/version.py
 PhaseNet.egg-info/PKG-INFO
