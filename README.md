@@ -1,8 +1,22 @@
-## 1. Install
+### This fork : 
+- Packaging stuff
+    - The program (**phasenet_run.py**) can be called from any location
+    - Requirements modified
+- Basic graphical display moved to an independant program named **phasenet_disp.py**    
+- The prediction mode now provides absolute time picks (not sample indexes)      
+- The prediction mode can now run on a SDS data structure
+    - no need to group components in a single file
+    - can run on large data structure without preliminary data manipulation
+- Prediction series for P and S phases can be saved in a hdf5 archive and SDS data structure that mimics the original one.    
+    - The overlaps between the 3000 samples windows are better handled  
+    - The probability series can be used for further usages like network associations...
+- See example usage on anonymous data in demo/demo.sh                   
+- **Caution** : mode others than prediction (train/test/...) may have been altered by these changes, use the original fork for these modes. 
+Please use with care, and refer to the original fork in case of doubts. I apology to the original developers if some of the functionalities of the code have been altered or if the code does not follow the original goals. 
 
-### Using Anaconda (recommended)
+## 1. Install using Anaconda
 ```
-# move to the PhaseNet repo
+# move to the installation directory  PhaseNet repo
 conda create --name venv python=3.6
 conda activate venv
 conda install --file requirements.txt --yes
@@ -14,7 +28,7 @@ pip install -e .
 
 Numpy array data are stored in directory: **dataset**
 
-Mseed data are stored in directory: **demo**
+A mseed SDS data structure is stored in directory: **demo**
 
 ### 3.Model
 Located in directory: **model/190703-214543**
@@ -22,82 +36,44 @@ Located in directory: **model/190703-214543**
 ### 4. Prediction 
 
 #### a) Data format -- mseed with obspy
-
-Required a csv file and a directory of mseed files.
-
-The csv file contains foure column: "fname, E, N, Z"
-
-The mseed file contains the continous data with ENZ channels.
-
-Add **--input_mseed** to process mseed data:
-
+ 
 ~~~bash
-source .venv/bin/activate
-python run.py --mode=pred --model_dir=model/190703-214543 --data_dir=demo/mseed --data_list=demo/fname.csv --output_dir=output --batch_size=20 --input_mseed
+conda activate venv
+phasenet_run.py \
+    --mode pred \
+    --model_dir path/to/PhaseNet/PhaseNet/model/190703-214543 \
+    --data_dir sds_root_directory \
+    --data_list fname.csv \
+    --output_dir output_will_be_overwritten \
+    --batch_size 20 \
+    --input_mseed \
+    --save_result
+#    --plot_figure  # disabled in this version
 ~~~
 
 Notes:
-1. The detected P&S phases are stored to file **picks.csv** inside **--output_dir**. The picks.csv has three columns: file name with the beginning sample index (fname_index), P-phase index (itp), P-phase probability (tp_prob), S-phase index (its), S-phase probability (ts_prob). The absolute phase index = fname_index + itp/its.
-2. The activation thresholds for P&S phases are set to 0.3 as default. Specify **--tp_prob** and **--ts_prob** to change the two thresholds. 
-3. On default, the mseed file is processed twice with 50% overlap to avoid phases being cut in the middle. The second pass are appended to the end of first pass. For example, if the index of the input data is from 0-60000, the index of second pass is from 60000-120000. If the processing window is 3000, the fist 1500 samples of the second pass are the padded zeros.
-4. You can customze the preprocssing of mseed file, such as filtering and resampling, inside the function **read_mseed** in data_reader.py.
-5. **demo/demo-obspy.ipynb** has a simple example of downloading and preparing mseed data using obspy.
+
+1. use --input_mseed (mandatory in this fork)  
+2. provide a csv file using the --data_list argument,  
+    - header : network,station,location,channel,dataquality,year,julday  
+    - one line per day of 3 component data 
+        - each line of the csv file must point to exactly 3 files (E,N,Z on a particular day)  
+        - use wildcards only for unkown fields and for the component letter (see demo/fname.csv)  
+3. The activation thresholds for P&S phases are set to 0.3 as default. Specify **--tp_prob** and **--ts_prob** to change the two thresholds.
+4. output  
+    - The detected P&S phases are stored to file **picks.csv** inside **--output_dir**
+    - if --save-result:  
+        - details of the predictions in **output_dir/results/sample_results.hdf5**  
+        - a reformed sds archive with predictions **output_dir/results/year/network/...**, channel letters are P or S
+
+ 
 
 #### b) Data format -- numpy array
-Required a csv file and a directory of npz files.
-
-The csv file contains one column: "fname"
-
-The npz file contains one variable: "data"
-
-The shape of "data" variable has a shape of 3000 x 3
-
-~~~bash
-source .venv/bin/activate
-python run.py --mode=pred --model_dir=model/190703-214543 --data_dir=dataset/waveform_pred --data_list=dataset/waveform.csv --output_dir=output --plot_figure --save_result --batch_size=20
-~~~
-
-Notes:
-1. For large dataset and GPUs, larger batch size can accelerate the prediction. 
-2. Plotting figures and save resutls is very slow. Removing the argument of **--plot_figure, --save_result** can speed the prediction
-3. If using input data length other than 3000, specify argument **--input_length=**. 
+Not recommended on this fork
 
 ### 5. Training on new dataset
-
-#### Training data format
-Required a csv file and a directory of npz files.
-
-The csv file contains four columns: "fname", "itp", "its", "channels"
-
-The npz file contains four variable: "data", "itp", "its", "channels"
-
-The shape of "data" variables has a shape of 9001 x 3
-
-The variables "itp" and "its" are the data points of first P&S arrivals picked by analysts. 
-
-- Training from scratch:
-
-~~~bash
-source .venv/bin/activate
-python run.py --mode=train --train_dir=dataset/waveform_train --train_list=dataset/waveform.csv --batch_size=20
-~~~
-
-- Training from the pretrain model:
-
-~~~bash
-source .venv/bin/activate
-python run.py --mode=train --model_dir=model/190703-214543 --train_dir=dataset/waveform_train --train_list=dataset/waveform.csv --batch_size=20
-~~~
-
-
-####  Validation and Testing
-~~~bash
-source .venv/bin/activate
-python run.py --mode=valid --model_dir=model/190703-214543 --data_dir=dataset/waveform_train --data_list=dataset/waveform.csv --plot_figure --save_result --batch_size=20
-~~~
-
-Please let us know of any bugs found in the code. 
-
+Not recommended on this fork, use the original one to train the network   
+You can then use it with this fork by placing the model in PhaseNet/PhaseNet/model
 
 ### Related papers:
 - Zhu, W., & Beroza, G. C. (2018). PhaseNet: A Deep-Neural-Network-Based Seismic Arrival Time Picking Method. arXiv preprint arXiv:1803.03211.

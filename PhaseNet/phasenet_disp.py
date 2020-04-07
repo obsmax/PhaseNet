@@ -144,7 +144,11 @@ def display_data(stationkey, station_entry):
     ax = fig.add_subplot(111)
 
     for comp in "ENZPS":
-        st = obspy.read(station_entry[comp], format="MSEED")
+        try:
+            st = obspy.read(station_entry[comp], format="MSEED")
+        except KeyError:
+            continue
+
         if comp in 'ENZ':
             for tr in st:
                 tr.detrend('constant')
