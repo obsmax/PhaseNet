@@ -1,18 +1,18 @@
-### This fork : 
-- Packaging stuff
+### Changes in this fork : 
+- Packaging
     - The program (**phasenet_run.py**) can be called from any location
     - Requirements modified
 - Basic graphical display moved to an independant program named **phasenet_disp.py**    
-- The prediction mode now provides absolute time picks (not sample indexes)      
-- The prediction mode can now run on a SDS data structure
-    - no need to group components in a single file
-    - can run on large data structure without preliminary data manipulation
+- The prediction mode now provides *absolute* time picks (not only sample indexes)      
+- The prediction mode can now run on a SDS data structure for massive datasets
+    - no need to group components in a single file  
+    - can run on large data structure : preliminary data manipulation no longer required  
 - Prediction series for P and S phases can be saved in a hdf5 archive and SDS data structure that mimics the original one.    
     - The overlaps between the 3000 samples windows are better handled  
     - The probability series can be used for further usages like network associations...
 - See example usage on anonymous data in demo/demo.sh                   
 - **Caution** : mode others than prediction (train/test/...) may have been altered by these changes, use the original fork for these modes. 
-Please use with care, and refer to the original fork in case of doubts. I apology to the original developers if some of the functionalities of the code have been altered or if the modifications do not follow the original goals and conventions. 
+Please refer to the original fork in case of doubts. 
 
 ### 1. Install using Anaconda
 ```
