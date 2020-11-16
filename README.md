@@ -16,14 +16,14 @@ Please refer to the original fork in case of doubts.
 
 ### 1. Install using Anaconda
 ```
-# get this fork
+# clone this fork to ./PhaseNet (must not exist)
 conda clone https://github.com/obsmax/PhaseNet.git
 
-# move to the installation directory  PhaseNet repo
-cd PhaseNet
+# move to the installation directory PhaseNet repo
+cd PhaseNet 
 
-conda create --name py37-PhaseNet python=3.7 --yes
-conda activate py37-PhaseNet
+conda create --name py36-phasenet python=3.6 --yes
+conda activate py36-phasenet
 
 conda install --file requirements.txt --yes
 python -m pip install -e .
@@ -31,12 +31,12 @@ python -m pip install -e .
 
 
 ### 2.Demo Data
-
-Numpy array data are stored in directory: **dataset**
-
-A mseed SDS data structure is stored in directory: **demo**
+  
+A test mseed SDS data structure is stored in directory: **demo**
 
 ### 3.Model
+
+a pretrained model from original fork  
 Located in directory: **model/190703-214543**
 
 ### 4. Prediction 
@@ -44,7 +44,7 @@ Located in directory: **model/190703-214543**
 #### a) Data format -- mseed with obspy
  
 ~~~bash
-conda activate venv
+conda activate py36-phasenet
 phasenet_run.py \
     --mode pred \
     --model_dir path/to/PhaseNet/PhaseNet/model/190703-214543 \

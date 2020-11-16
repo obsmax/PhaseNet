@@ -14,7 +14,7 @@
 # output picks in output_dir/picks.csv
 
 # to generate a csv file use
-# sds_to_csv.py ./sds > fname.csv
+sds_to_csv.py ./sds > fname.csv
 
 phasenet_run.py \
     --mode pred \
@@ -31,6 +31,9 @@ phasenet_disp.py \
     --mode all \
     --data_dir sds \
     --output_dir output \
-    --seedid "*.*.*.EH?.D" \
-    --time 2000.223.10.00 2000.223.10.05   \
+    --seedid "*.*.*.?H?.D" \
+    --time 2000.223.09.15 2000.223.09.30   \
     --decim 5000
+    
+#    --time 2000.223.10.00 2000.223.10.05   \
+#    --decim 5000

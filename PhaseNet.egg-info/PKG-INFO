@@ -6,39 +6,45 @@ Home-page: UNKNOWN
 Author: 
 Author-email: 
 License: UNKNOWN
-Description: ### This fork : 
-        - Packaging stuff
+Description: ### Changes in this fork : 
+        - Packaging
             - The program (**phasenet_run.py**) can be called from any location
             - Requirements modified
         - Basic graphical display moved to an independant program named **phasenet_disp.py**    
-        - The prediction mode now provides absolute time picks (not sample indexes)      
-        - The prediction mode can now run on a SDS data structure
-            - no need to group components in a single file
-            - can run on large data structure without preliminary data manipulation
+        - The prediction mode now provides *absolute* time picks (not only sample indexes)      
+        - The prediction mode can now run on a SDS data structure for massive datasets
+            - no need to group components in a single file  
+            - can run on large data structure : preliminary data manipulation no longer required  
         - Prediction series for P and S phases can be saved in a hdf5 archive and SDS data structure that mimics the original one.    
             - The overlaps between the 3000 samples windows are better handled  
             - The probability series can be used for further usages like network associations...
         - See example usage on anonymous data in demo/demo.sh                   
         - **Caution** : mode others than prediction (train/test/...) may have been altered by these changes, use the original fork for these modes. 
-        Please use with care, and refer to the original fork in case of doubts. I apology to the original developers if some of the functionalities of the code have been altered or if the code does not follow the original goals. 
+        Please refer to the original fork in case of doubts. 
         
-        ## 1. Install using Anaconda
+        ### 1. Install using Anaconda
         ```
-        # move to the installation directory  PhaseNet repo
-        conda create --name venv python=3.6
-        conda activate venv
+        # clone this fork to ./PhaseNet (must not exist)
+        conda clone https://github.com/obsmax/PhaseNet.git
+        
+        # move to the installation directory PhaseNet repo
+        cd PhaseNet 
+        
+        conda create --name py36-phasenet python=3.6 --yes
+        conda activate py36-phasenet
+        
         conda install --file requirements.txt --yes
-        pip install -e .
+        python -m pip install -e .
         ```
         
         
         ### 2.Demo Data
-        
-        Numpy array data are stored in directory: **dataset**
-        
-        A mseed SDS data structure is stored in directory: **demo**
+          
+        A test mseed SDS data structure is stored in directory: **demo**
         
         ### 3.Model
+        
+        a pretrained model from original fork  
         Located in directory: **model/190703-214543**
         
         ### 4. Prediction 
@@ -46,7 +52,7 @@ Description: ### This fork :
         #### a) Data format -- mseed with obspy
          
         ~~~bash
-        conda activate venv
+        conda activate py36-phasenet
         phasenet_run.py \
             --mode pred \
             --model_dir path/to/PhaseNet/PhaseNet/model/190703-214543 \

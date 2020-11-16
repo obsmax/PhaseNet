@@ -150,7 +150,7 @@ def find_input_data(args):
     time_selection = (starttime.timestamp <= pickdata['time']) & \
                      (pickdata['time'] <= endtime.timestamp)
     if not time_selection.any():
-        raise ValueError
+        raise ValueError(f'no input data found for {args}')
 
     seedids = args.seedid
     input_data = {}
