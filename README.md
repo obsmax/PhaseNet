@@ -16,11 +16,17 @@ Please refer to the original fork in case of doubts.
 
 ### 1. Install using Anaconda
 ```
+# get this fork
+conda clone https://github.com/obsmax/PhaseNet.git
+
 # move to the installation directory  PhaseNet repo
-conda create --name venv python=3.6
-conda activate venv
+cd PhaseNet
+
+conda create --name py37-PhaseNet python=3.7 --yes
+conda activate py37-PhaseNet
+
 conda install --file requirements.txt --yes
-pip install -e .
+python -m pip install -e .
 ```
 
 
