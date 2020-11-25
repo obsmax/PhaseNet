@@ -24,16 +24,16 @@ phasenet_run.py \
     --output_dir output \
     --batch_size 20 \
     --input_mseed \
-    --save_result
+    # --save_result
 #    --plot_figure  # disabled in this version
 
-phasenet_disp.py \
-    --mode all \
-    --data_dir sds \
-    --output_dir output \
-    --seedid "*.*.*.?H?.D" \
-    --time 2000.223.09.15 2000.223.09.30   \
-    --decim 5000
+# phasenet_disp.py \
+#     --mode all \
+#     --data_dir sds \
+#     --output_dir output \
+#     --seedid "*.*.*.?H?.D" \
+#     --time 2000.223.09.15 2000.223.09.30   \
+#     --decim 5000
     
 #    --time 2000.223.10.00 2000.223.10.05   \
 #    --decim 5000
