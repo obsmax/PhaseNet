@@ -10,6 +10,7 @@ from PhaseNet.detect_peaks import detect_peaks
 import logging
 from obspy.core import Stream, Trace, UTCDateTime
 
+logger = logging.getLogger(__name__)
 
 def detect_peaks_thread(i, pred, fname=None, result_dir=None, args=None):
     input_length = pred.shape[1]
@@ -247,7 +248,7 @@ def reform_mseed_files_from_predictions(hdf5_pointer, result_dir):
                             network=network, station=station,
                             location=trace.stats.location,
                             channeldq=channeldq)
-                        print(mseedfile)
+                        logger.info(mseedfile)
 
                         os.makedirs(os.path.dirname(mseedfile), exist_ok=True)
                         stream.merge(fill_value=0, interpolation_samples=0)

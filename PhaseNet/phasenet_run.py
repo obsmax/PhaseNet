@@ -13,6 +13,7 @@ from PhaseNet.data_reader import \
 from PhaseNet.util import save_predictions_to_hdf5_archive, reform_mseed_files_from_predictions
 from PhaseNet.util import plot_result_thread, clean_queue, postprocessing_thread, calculate_metrics
 
+logger = logging.getLogger(__name__)
 
 def read_args():
     parser = argparse.ArgumentParser()
@@ -507,7 +508,7 @@ def pred_fn(args, data_reader, figure_dir=None, result_dir=None, log_dir=None):
                     for t in threads:
                         t.join()
                     last_size = sess.run(data_reader.queue.size())
-                    print(f"Last batch: {last_size} samples")
+                    logger.info(f"Last batch: {last_size} samples")
                     sess.run(data_reader.queue.close())
                     if last_size == 0:
                         break
@@ -557,7 +558,7 @@ def pred_fn(args, data_reader, figure_dir=None, result_dir=None, log_dir=None):
             if args.save_result:
                 # load sample prediction and concatenate them into
                 # mseed files with the same structure as the input sds tree
-                print('forming mseed files with the P and S prediction series...')
+                logging.info('forming mseed files with the P and S prediction series...')
                 with h5py.File(hdf5_archive, 'r') as hdf5_pointer:
                     reform_mseed_files_from_predictions(
                         hdf5_pointer, result_dir)

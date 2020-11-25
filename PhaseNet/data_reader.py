@@ -6,12 +6,12 @@ import tensorflow as tf
 import numpy as np
 import pandas as pd
 import logging
-import warnings
 pd.options.mode.chained_assignment = None
 import obspy
 from obspy.core import UTCDateTime
 from tqdm import tqdm
 
+logger = logging.getLogger(__name__)
 
 # conventional path name for SDS data archive
 SDSPATH = os.path.join(
@@ -144,7 +144,7 @@ class DataReader(object):
                                               'channels': meta['channels']}
                     meta = self.buffer[fname]
                 except:
-                    logging.error("Failed reading {}".format(fname))
+                    logger.error("Failed reading {}".format(fname))
                     continue
 
                 channels = meta['channels'].tolist()
@@ -249,7 +249,7 @@ class DataReader_test(DataReader):
                                        'channels': meta['channels']}
                 meta = self.buffer[fp]
             except:
-                logging.error("Failed reading {}".format(fp))
+                logger.error("Failed reading {}".format(fp))
                 continue
 
             channels = meta['channels'].tolist()
@@ -331,7 +331,7 @@ class DataReader_pred(DataReader):
         self.X_shape = config.X_shape
         self.Y_shape = config.Y_shape
         if input_length is not None:
-            logging.warning("Using input length: {}".format(input_length))
+            logger.warning("Using input length: {}".format(input_length))
             self.X_shape[0] = input_length
             self.Y_shape[0] = input_length
 
@@ -361,17 +361,17 @@ class DataReader_pred(DataReader):
             try:
                 meta = np.load(fp)
             except:
-                logging.error("Failed reading {}".format(fname))
+                logger.error("Failed reading {}".format(fname))
                 continue
             shift = 0
             # sample = meta['data'][shift:shift+self.X_shape, np.newaxis, :]
             sample = meta['data'][:, np.newaxis, :]
             if np.array(sample.shape).all() != np.array(self.X_shape).all():
-                logging.error("{}: shape {} is not same as input shape {}!".format(fname, sample.shape, self.X_shape))
+                logger.error("{}: shape {} is not same as input shape {}!".format(fname, sample.shape, self.X_shape))
                 continue
 
             if np.isnan(sample).any() or np.isinf(sample).any():
-                logging.warning("Data error: {}\nReplacing nan and inf with zeros".format(fname))
+                logger.warning("Data error: {}\nReplacing nan and inf with zeros".format(fname))
                 sample[np.isnan(sample)] = 0
                 sample[np.isinf(sample)] = 0
 
@@ -393,7 +393,7 @@ class DataReader_mseed(DataReader):
         self.input_length = config.X_shape[0]
 
         if input_length is not None:
-            logging.warning("Using input length: {}".format(input_length))
+            logger.warning("Using input length: {}".format(input_length))
             self.X_shape[0] = input_length
             self.Y_shape[0] = input_length
             self.input_length = input_length
@@ -446,7 +446,7 @@ class DataReader_mseed(DataReader):
         for st, expected_comp in zip([estream, nstream, zstream], 'ENZ'):
             for tr in st:
                 if tr.stats.sampling_rate != self.config.sampling_rate:
-                    warnings.warn(f'Sampling rate was {tr.stats.sampling_rate}Hz')
+                    logger.warning(f'Sampling rate was {tr.stats.sampling_rate}Hz')
                     # try obspy resampler...
                     tr.resample(
                         sampling_rate=self.config.sampling_rate,
@@ -533,10 +533,8 @@ class DataReader_mseed(DataReader):
         return seedid, data, timearray
 
     def thread_main(self, sess, n_threads=1, start=0):
-        # raise NotImplementedError('update this method so it can receive 3 indep mseed files for channels E, N, Z')
+
         for i in range(start, self.num_data, n_threads):
-            #fname = self.data_list.iloc[i]['fname']
-            #fp = os.path.join(self.data_dir, fname)
 
             # get station indications from csv, may include wildcards
             network     = str(self.data_list.iloc[i]['network'])       # expects FR
@@ -549,9 +547,10 @@ class DataReader_mseed(DataReader):
 
             # location = location.replace('none', '')
             if location in ["*", "??", ""]:
+                # accepted locations
                 pass
             elif len(location) != 2:
-                raise ValueError(f"unexpected location {location}")
+                raise ValueError(f"unexpected location: {location} type: {type(location)}")
 
             if not (len(channel) == 3 and channel.endswith('?') or channel.endswith('*')):
                 raise ValueError(f"unexpected channel {channel}, "
@@ -559,6 +558,8 @@ class DataReader_mseed(DataReader):
 
             filenames = []
             for comp in "ENZ":
+
+                # generate a filename using component letter comp
                 filepath = SDSPATH.format(
                     data_dir=self.data_dir, year=year, julday=julday,
                     dataquality=dataquality,
@@ -566,21 +567,22 @@ class DataReader_mseed(DataReader):
                     location=location, channel=channel[:2] + comp)
 
                 if os.path.isfile(filepath):
+                    # file exists
                     filenames.append(filepath)
 
                 else:
+                    # file doesn't exist, maybe this is a path, including wildcards, ...
                     ls = glob.iglob(filepath)
-                    try:
-                        filename = next(ls)
-                        try:
-                            next(ls)
-                            raise ValueError('there are more than one file responding to {}'.format(filepath))
-                        except StopIteration:
-                            pass
-                    except StopIteration:
-                        raise ValueError('no file responding to {}'.format(filepath))
-                    finally:
-                        ls.close()
+                    filename = next(ls, None)  # None if filepath correspond to no file
+                    more = next(ls, None)  # None if filepath correspond to exactly one file
+                    ls.close()
+
+                    if filename is None:
+                        raise ValueError('no file responding to the file path "{}"'.format(filepath))
+
+                    if more is not None:
+                        raise ValueError('there are more than one file responding to the file path "{}"'.format(filepath))
+
                     filenames.append(filename)
 
             try:
@@ -593,11 +595,11 @@ class DataReader_mseed(DataReader):
             except (IOError, ValueError, TypeError) as e:
                 # you should never skip Exception, just notice the error type when it occurs and add it to the
                 # list of ignored errors above
-                logging.error("Failed reading mseed files {} (reason:{})".format(filenames, str(e)))
-                print(e)
+                logger.warning("WARNING : Failed reading mseed files {} (reason:{})".format(filenames, str(e)))
                 continue
+
             except BaseException as e:
-                print('please never skip Exception or BaseException, '
+                logger.error('please never skip Exception or BaseException, '
                       'add the following type to the except close above : '
                       '{}'.format(e.__class__.__name__))
                 raise e
