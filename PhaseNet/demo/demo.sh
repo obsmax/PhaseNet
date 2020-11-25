@@ -24,7 +24,7 @@ phasenet_run.py \
     --output_dir output \
     --batch_size 20 \
     --input_mseed \
-    # --save_result
+    --save_result \
 #    --plot_figure  # disabled in this version
 
 # phasenet_disp.py \

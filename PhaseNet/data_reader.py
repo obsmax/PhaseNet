@@ -429,6 +429,48 @@ class DataReader_mseed(DataReader):
         output = self.queue.dequeue_up_to(num_elements)
         return output
 
+    def find_filenames(self, network, station, location, channel, dataquality, year, julday):
+
+        if location in ["*", "??", ""]:
+            # accepted locations :
+            pass
+        elif len(location) != 2:
+            raise ValueError(f"unexpected location: {location} type: {type(location)}")
+
+        if not (len(channel) == 3 and channel.endswith('?') or channel.endswith('*')):
+            raise ValueError(f"unexpected channel {channel}, "
+                             "use something like HH? or EH?")
+
+        filenames = []
+        for comp in "ENZ":
+
+            # generate a filename using component letter comp
+            filepath = SDSPATH.format(
+                data_dir=self.data_dir, year=year, julday=julday,
+                dataquality=dataquality,
+                network=network, station=station,
+                location=location, channel=channel[:2] + comp)
+
+            if os.path.isfile(filepath):
+                # file exists
+                filenames.append(filepath)
+
+            else:
+                # file doesn't exist, maybe this is a path, including wildcards, ...
+                ls = glob.iglob(filepath)
+                filename = next(ls, None)  # None if filepath correspond to no file
+                more = next(ls, None)  # None if filepath correspond to exactly one file
+                ls.close()
+
+                if filename is None:
+                    raise ValueError('no file responding to the file path "{}"'.format(filepath))
+
+                if more is not None:
+                    raise ValueError('there are more than one file responding to the file path "{}"'.format(filepath))
+
+                filenames.append(filename)
+        return filenames
+
     def read_mseed(self, efile, nfile, zfile):
         """
         default mseed preprocessing here
@@ -536,6 +578,7 @@ class DataReader_mseed(DataReader):
 
         for i in range(start, self.num_data, n_threads):
 
+            # ======== this section must not fail
             # get station indications from csv, may include wildcards
             network     = str(self.data_list.iloc[i]['network'])       # expects FR
             station     = str(self.data_list.iloc[i]['station'])       # expects ABCD
@@ -545,57 +588,29 @@ class DataReader_mseed(DataReader):
             year        = int(self.data_list.iloc[i]['year'])          # expects 2014
             julday      = int(self.data_list.iloc[i]['julday'])        # expects 014
 
-            # location = location.replace('none', '')
-            if location in ["*", "??", ""]:
-                # accepted locations
-                pass
-            elif len(location) != 2:
-                raise ValueError(f"unexpected location: {location} type: {type(location)}")
+            # warning blank fields in csv will correspond to "nan" string here
+            if location == "nan":
+                location = ""
 
-            if not (len(channel) == 3 and channel.endswith('?') or channel.endswith('*')):
-                raise ValueError(f"unexpected channel {channel}, "
-                                 "use something like HH? or EH?")
-
-            filenames = []
-            for comp in "ENZ":
-
-                # generate a filename using component letter comp
-                filepath = SDSPATH.format(
-                    data_dir=self.data_dir, year=year, julday=julday,
-                    dataquality=dataquality,
-                    network=network, station=station,
-                    location=location, channel=channel[:2] + comp)
-
-                if os.path.isfile(filepath):
-                    # file exists
-                    filenames.append(filepath)
-
-                else:
-                    # file doesn't exist, maybe this is a path, including wildcards, ...
-                    ls = glob.iglob(filepath)
-                    filename = next(ls, None)  # None if filepath correspond to no file
-                    more = next(ls, None)  # None if filepath correspond to exactly one file
-                    ls.close()
-
-                    if filename is None:
-                        raise ValueError('no file responding to the file path "{}"'.format(filepath))
-
-                    if more is not None:
-                        raise ValueError('there are more than one file responding to the file path "{}"'.format(filepath))
-
-                    filenames.append(filename)
-
+            # ======== this section will ignore reading errors with a warning message
             try:
-                # meta = self.read_mseed(fp, [E, N, Z])
+                # look for 3 component data files according to csv data
+                filenames = self.find_filenames(
+                    network, station, location, channel, dataquality, year, julday)
+
+                # read the files
                 seedid, data, timearray = self.read_mseed(
-                    efile=filenames[0],
-                    nfile=filenames[1],
-                    zfile=filenames[2])
+                    efile=filenames[0],  # east comp
+                    nfile=filenames[1],  # north comp
+                    zfile=filenames[2])  # vert comp
 
             except (IOError, ValueError, TypeError) as e:
-                # you should never skip Exception, just notice the error type when it occurs and add it to the
-                # list of ignored errors above
-                logger.warning("WARNING : Failed reading mseed files {} (reason:{})".format(filenames, str(e)))
+                # an error occured, notify user but do not interrupt the process
+                logger.warning(f"WARNING : reading data for "
+                               f"network:{network} station:{station} "
+                               f"location:{location} channel:{channel} "
+                               f"year:{year} julday:{julday}"
+                               f" failed (reason:{str(e)})")
                 continue
 
             except BaseException as e:
@@ -604,6 +619,7 @@ class DataReader_mseed(DataReader):
                       '{}'.format(e.__class__.__name__))
                 raise e
 
+            # ========
             for i in tqdm(
                     range(data.shape[0]),
                     desc=f"{seedid}.{year}.{julday}"):

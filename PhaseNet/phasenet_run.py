@@ -559,9 +559,10 @@ def pred_fn(args, data_reader, figure_dir=None, result_dir=None, log_dir=None):
                 # load sample prediction and concatenate them into
                 # mseed files with the same structure as the input sds tree
                 logging.info('forming mseed files with the P and S prediction series...')
-                with h5py.File(hdf5_archive, 'r') as hdf5_pointer:
-                    reform_mseed_files_from_predictions(
-                        hdf5_pointer, result_dir)
+                logging.warning('disabled for now. TODO : move this to a seaparte script')
+                # with h5py.File(hdf5_archive, 'r') as hdf5_pointer:
+                #     reform_mseed_files_from_predictions(
+                #         hdf5_pointer, result_dir)
 
         else:
             # write pick file header
@@ -590,7 +591,7 @@ def pred_fn(args, data_reader, figure_dir=None, result_dir=None, log_dir=None):
                 # fclog.flush()
 
         fclog.close()
-        print("Done")
+        logger.info("Done")
 
     return 0
 
