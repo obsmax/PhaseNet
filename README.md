@@ -23,9 +23,9 @@ git clone https://github.com/obsmax/PhaseNet.git
 cd PhaseNet 
 
 conda create --name py36-phasenet python=3.6 --yes
-conda config --add channels conda-forge  # for obspy
 conda activate py36-phasenet
 
+conda config --add channels conda-forge  # for obspy
 conda install --file requirements.txt --yes
 python -m pip install -e .
 ```
