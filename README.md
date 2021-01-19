@@ -17,7 +17,7 @@ Please refer to the original fork in case of doubts.
 ### 1. Install using Anaconda
 ```
 # clone this fork to ./PhaseNet (must not exist)
-conda clone https://github.com/obsmax/PhaseNet.git
+git clone https://github.com/obsmax/PhaseNet.git
 
 # move to the installation directory PhaseNet repo
 cd PhaseNet 
